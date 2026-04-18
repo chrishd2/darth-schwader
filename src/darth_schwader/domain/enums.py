@@ -1,0 +1,64 @@
+from __future__ import annotations
+
+from enum import StrEnum
+
+
+class StrategyType(StrEnum):
+    VERTICAL_SPREAD = "VERTICAL_SPREAD"
+    IRON_CONDOR = "IRON_CONDOR"
+    DEFINED_RISK_DIRECTIONAL = "DEFINED_RISK_DIRECTIONAL"
+    CASH_SECURED_PUT = "CASH_SECURED_PUT"
+    COVERED_CALL = "COVERED_CALL"
+    CALENDAR_SPREAD = "CALENDAR_SPREAD"
+    NAKED_PUT = "NAKED_PUT"
+    NAKED_CALL = "NAKED_CALL"
+
+
+class SignalStatus(StrEnum):
+    PENDING = "PENDING"
+    APPROVED_AWAITING_HITL = "APPROVED_AWAITING_HITL"
+    REJECTED = "REJECTED"
+    EXPIRED = "EXPIRED"
+    EXECUTED = "EXECUTED"
+
+
+class OrderStatus(StrEnum):
+    PENDING_SUBMISSION = "PENDING_SUBMISSION"
+    SUBMITTED = "SUBMITTED"
+    WORKING = "WORKING"
+    FILLED = "FILLED"
+    PARTIALLY_FILLED = "PARTIALLY_FILLED"
+    CANCELLED = "CANCELLED"
+    REJECTED = "REJECTED"
+    ERROR = "ERROR"
+
+
+class CollateralKind(StrEnum):
+    CASH = "CASH"
+    SHARES = "SHARES"
+    LONG_OPTION = "LONG_OPTION"
+    NONE = "NONE"
+
+
+class AccountType(StrEnum):
+    CASH = "CASH"
+    MARGIN = "MARGIN"
+    PORTFOLIO_MARGIN = "PORTFOLIO_MARGIN"
+
+
+class CashLedgerReason(StrEnum):
+    ORDER_FILL = "ORDER_FILL"
+    COLLATERAL_LOCK = "COLLATERAL_LOCK"
+    COLLATERAL_RELEASE = "COLLATERAL_RELEASE"
+    MANUAL_ADJUSTMENT = "MANUAL_ADJUSTMENT"
+    RECONCILIATION = "RECONCILIATION"
+
+
+__all__ = [
+    "AccountType",
+    "CashLedgerReason",
+    "CollateralKind",
+    "OrderStatus",
+    "SignalStatus",
+    "StrategyType",
+]

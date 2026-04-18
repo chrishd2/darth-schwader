@@ -1,0 +1,111 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "darth-schwader"
+version = "0.1.0"
+description = "Single-tenant options trading bot scaffold for Charles Schwab."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { file = "LICENSE" }
+authors = [{ name = "Darth Schwader" }]
+dependencies = [
+  "fastapi>=0.115.0,<1.0.0",
+  "uvicorn[standard]>=0.32.0,<1.0.0",
+  "jinja2>=3.1.4,<4.0.0",
+  "pydantic>=2.10.0,<3.0.0",
+  "pydantic-settings>=2.6.0,<3.0.0",
+  "sqlalchemy[asyncio]>=2.0.36,<3.0.0",
+  "aiosqlite>=0.20.0,<1.0.0",
+  "alembic>=1.14.0,<2.0.0",
+  "httpx>=0.28.0,<1.0.0",
+  "apscheduler>=3.10.4,<4.0.0",
+  "cryptography>=44.0.0,<45.0.0",
+  "anthropic>=0.40.0,<1.0.0",
+  "openai>=1.57.0,<2.0.0",
+  "authlib>=1.4.0,<2.0.0",
+  "python-multipart>=0.0.18,<1.0.0",
+  "structlog>=24.4.0,<25.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3.4,<9.0.0",
+  "pytest-asyncio>=0.24.0,<1.0.0",
+  "pytest-cov>=6.0.0,<7.0.0",
+  "respx>=0.22.0,<1.0.0",
+  "ruff>=0.8.4,<1.0.0",
+  "mypy>=1.13.0,<2.0.0",
+]
+
+[project.scripts]
+darth-schwader = "darth_schwader.main:run"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "scripts", "tests"]
+
+[tool.ruff.lint]
+select = [
+  "E",
+  "F",
+  "W",
+  "I",
+  "B",
+  "UP",
+  "N",
+  "ASYNC",
+  "C4",
+  "DTZ",
+  "G",
+  "PIE",
+  "PL",
+  "PTH",
+  "RET",
+  "RUF",
+  "SIM",
+  "T20",
+]
+ignore = [
+  "PLR0913",
+  "PLR2004",
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["darth_schwader"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unused_configs = true
+warn_unreachable = true
+pretty = true
+show_error_codes = true
+plugins = []
+mypy_path = "src"
+
+[[tool.mypy.overrides]]
+module = [
+  "apscheduler.*",
+  "uvicorn.*",
+]
+ignore_missing_imports = true
+
+[tool.coverage.run]
+branch = true
+source = ["src"]
+
+[tool.coverage.report]
+show_missing = true
