@@ -18,6 +18,7 @@ class StrategyLeg(BaseModel):
     strike: Decimal
     expiration: str
     option_type: Literal["CALL", "PUT"]
+    asset_type: Literal["OPTION", "EQUITY", "FUTURE"] = "OPTION"
 
 
 class StrategySignal(BaseModel):
@@ -43,7 +44,7 @@ class AiRunContext(BaseModel):
     account_snapshot: dict[str, Any]
     positions: list[dict[str, Any]]
     features_by_underlying: dict[str, dict[str, Any]] = Field(default_factory=dict)
-    reason: Literal["SCHEDULED_OPEN", "SCHEDULED_PRECLOSE", "IV_SPIKE"]
+    reason: Literal["SCHEDULED_OPEN", "SCHEDULED_PRECLOSE", "IV_SPIKE", "MANUAL"]
 
 
 __all__ = ["AiRunContext", "StrategyLeg", "StrategySignal"]

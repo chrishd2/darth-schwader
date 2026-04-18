@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
+from typing import cast
 from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -10,6 +12,8 @@ from darth_schwader.services.reconciliation import reconcile_end_of_day
 
 MARKET_TZ = ZoneInfo("America/New_York")
 
+SignalRunnerCallable = Callable[[str], Awaitable[int]]
+
 
 def register_jobs(scheduler: AsyncIOScheduler, deps: dict[str, object]) -> None:
     settings = deps["settings"]
@@ -18,7 +22,7 @@ def register_jobs(scheduler: AsyncIOScheduler, deps: dict[str, object]) -> None:
     chain_service = deps["chain_service"]
     token_watchdog_job = deps["token_watchdog"]
     iv_watcher = deps["iv_watcher"]
-    signal_runner = deps.get("signal_runner")
+    signal_runner = cast(SignalRunnerCallable | None, deps.get("signal_runner"))
     polygon_backfill = deps.get("polygon_backfill")
 
     async def _run_token_watchdog() -> None:
@@ -55,27 +59,30 @@ def register_jobs(scheduler: AsyncIOScheduler, deps: dict[str, object]) -> None:
         max_instances=1,
         coalesce=True,
     )
-    if signal_runner is not None:
-        async def _run_signal_open() -> None:
-            await signal_runner("SCHEDULED_OPEN")
+    if signal_runner is None:
+        raise ValueError("signal_runner is required to register scheduler jobs")
+    active_signal_runner: SignalRunnerCallable = signal_runner
 
-        async def _run_signal_preclose() -> None:
-            await signal_runner("SCHEDULED_PRECLOSE")
+    async def _run_signal_open() -> None:
+        await active_signal_runner("SCHEDULED_OPEN")
 
-        scheduler.add_job(
-            _run_signal_open,
-            trigger=CronTrigger(hour=9, minute=36, timezone=MARKET_TZ),
-            id="signal_run_open",
-            max_instances=1,
-            coalesce=True,
-        )
-        scheduler.add_job(
-            _run_signal_preclose,
-            trigger=CronTrigger(hour=15, minute=31, timezone=MARKET_TZ),
-            id="signal_run_preclose",
-            max_instances=1,
-            coalesce=True,
-        )
+    async def _run_signal_preclose() -> None:
+        await active_signal_runner("SCHEDULED_PRECLOSE")
+
+    scheduler.add_job(
+        _run_signal_open,
+        trigger=CronTrigger(hour=9, minute=36, timezone=MARKET_TZ),
+        id="signal_run_open",
+        max_instances=1,
+        coalesce=True,
+    )
+    scheduler.add_job(
+        _run_signal_preclose,
+        trigger=CronTrigger(hour=15, minute=31, timezone=MARKET_TZ),
+        id="signal_run_preclose",
+        max_instances=1,
+        coalesce=True,
+    )
     scheduler.add_job(
         iv_watcher.scan,
         trigger=CronTrigger(hour="9-15", minute="*/10", timezone=MARKET_TZ),

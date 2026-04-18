@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 
-from fastapi import Depends, Request
+from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from darth_schwader.config import Settings, get_settings
@@ -13,7 +13,10 @@ def get_app_state(request: Request) -> object:
     return request.app.state
 
 
-def get_runtime_settings() -> Settings:
+def get_runtime_settings(request: Request) -> Settings:
+    runtime = getattr(request.app.state, "settings", None)
+    if isinstance(runtime, Settings):
+        return runtime
     return get_settings()
 
 

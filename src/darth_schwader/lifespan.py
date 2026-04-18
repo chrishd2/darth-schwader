@@ -6,16 +6,18 @@ from datetime import UTC, datetime
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from darth_schwader.ai import SignalGenerator
 from darth_schwader.ai.llm import build_selector
 from darth_schwader.broker.cash_account import CashAccountGuard
-from darth_schwader.broker.schwab.client import SchwabApiClient
+from darth_schwader.broker.factory import BrokerFactory
 from darth_schwader.broker.schwab.oauth import SchwabOAuthClient
 from darth_schwader.config import Settings, get_settings
 from darth_schwader.data_sources.polygon.client import PolygonClient
 from darth_schwader.data_sources.polygon.ingestion import PolygonIngestion
+from darth_schwader.db.models import RiskPolicyOverride
 from darth_schwader.db.repositories.cash_ledger import CashLedgerRepository
 from darth_schwader.db.repositories.chains import ChainRepository
 from darth_schwader.db.repositories.iv_events import IvEventsRepository
@@ -30,6 +32,7 @@ from darth_schwader.services.account_sync import AccountSyncService
 from darth_schwader.services.chain_service import ChainService
 from darth_schwader.services.order_service import OrderService
 from darth_schwader.services.scheduler import register_jobs
+from darth_schwader.services.signal_runner import SignalRunner, empty_feature_provider
 from darth_schwader.services.token_watchdog import token_watchdog
 
 
@@ -62,6 +65,43 @@ def _attach_ai_services(
     )
 
 
+_RUNTIME_OVERRIDE_KEYS: frozenset[str] = frozenset(
+    {
+        "paper_trading",
+        "hitl_required",
+        "allow_naked",
+        "max_risk_per_trade_pct",
+        "preferred_max_risk_per_trade_pct",
+        "max_daily_drawdown_pct",
+        "max_weekly_drawdown_pct",
+        "max_positions",
+        "max_underlying_allocation_pct",
+        "min_dte_days",
+        "max_dte_days",
+    }
+)
+
+
+async def _apply_runtime_overrides(
+    settings: Settings,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> Settings:
+    async with session_factory() as session:
+        rows = (await session.scalars(select(RiskPolicyOverride))).all()
+    if not rows:
+        return settings
+    merged = settings.model_dump()
+    applied: dict[str, object] = {}
+    for row in rows:
+        if row.key not in _RUNTIME_OVERRIDE_KEYS:
+            continue
+        merged[row.key] = row.value
+        applied[row.key] = row.value
+    if not applied:
+        return settings
+    return Settings.model_validate(merged)
+
+
 @asynccontextmanager
 async def app_lifespan(app: FastAPI) -> AsyncIterator[None]:  # noqa: PLR0915
 
@@ -70,6 +110,8 @@ async def app_lifespan(app: FastAPI) -> AsyncIterator[None]:  # noqa: PLR0915
 
     engine = build_engine(settings.database_url)
     session_factory = build_session_factory(engine)
+
+    settings = await _apply_runtime_overrides(settings, session_factory)
 
     # Scheduler timezone is ET because all market cron jobs are expressed in ET.
     scheduler = AsyncIOScheduler(timezone="America/New_York")
@@ -80,7 +122,7 @@ async def app_lifespan(app: FastAPI) -> AsyncIterator[None]:  # noqa: PLR0915
     iv_events_repo = IvEventsRepository(session_factory)
 
     oauth_client = SchwabOAuthClient(settings, token_repo)
-    broker = SchwabApiClient(settings, token_repo)
+    broker = BrokerFactory.create(settings, token_repo)
     polygon_client = PolygonClient(settings)
     polygon_ingestion = PolygonIngestion(
         session_factory,
@@ -126,6 +168,14 @@ async def app_lifespan(app: FastAPI) -> AsyncIterator[None]:  # noqa: PLR0915
     app.state.iv_watcher = iv_watcher
     _attach_ai_services(app, settings, session_factory)
 
+    signal_runner = SignalRunner(
+        session_factory=session_factory,
+        signal_generator=app.state.signal_generator,
+        feature_provider=empty_feature_provider,
+        watchlist=settings.watchlist,
+    )
+    app.state.signal_runner = signal_runner
+
     register_jobs(
         scheduler,
         {
@@ -135,7 +185,7 @@ async def app_lifespan(app: FastAPI) -> AsyncIterator[None]:  # noqa: PLR0915
             "chain_service": chain_service,
             "token_watchdog": lambda: token_watchdog(token_repo, oauth_client),
             "iv_watcher": iv_watcher,
-            "signal_runner": None,
+            "signal_runner": signal_runner.run,
             "polygon_backfill": polygon_ingestion.backfill_watchlist,
         },
     )

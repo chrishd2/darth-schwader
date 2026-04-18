@@ -10,11 +10,28 @@ from darth_schwader.ai.contracts import StrategyLeg, StrategySignal
 from darth_schwader.broker.base import BrokerClient
 from darth_schwader.broker.cash_account import CashAccountGuard
 from darth_schwader.broker.models import OrderLeg, OrderRequest
-from darth_schwader.db.models import Account, AuditLog, Order, RiskEvent, Signal
+from darth_schwader.db.models import Account, AuditLog, Order, Signal
 from darth_schwader.domain.enums import CollateralKind, OrderStatus, SignalStatus
 from darth_schwader.domain.ids import make_client_order_id
 from darth_schwader.risk.engine import RiskEngine
 from darth_schwader.risk.models import RiskContext
+
+_INSTRUCTION_BY_ASSET_SIDE: dict[tuple[str, str], str] = {
+    ("OPTION", "LONG"): "BUY_TO_OPEN",
+    ("OPTION", "SHORT"): "SELL_TO_OPEN",
+    ("EQUITY", "LONG"): "BUY",
+    ("EQUITY", "SHORT"): "SELL_TO_OPEN",
+    ("FUTURE", "LONG"): "BUY",
+    ("FUTURE", "SHORT"): "SELL_TO_OPEN",
+}
+
+
+def _instruction_for(asset_type: str, side: str) -> str:
+    key = (asset_type, side)
+    instruction = _INSTRUCTION_BY_ASSET_SIDE.get(key)
+    if instruction is None:
+        raise ValueError(f"unsupported asset_type/side combination: {asset_type}/{side}")
+    return instruction
 
 
 class OrderService:
@@ -135,6 +152,7 @@ class OrderService:
                 strike=Decimal(str(leg["strike"])),
                 expiration=leg["expiration"],
                 option_type=leg["option_type"],
+                asset_type=leg.get("asset_type", "OPTION"),
             )
             for leg in signal.proposed_payload["legs"]
         ]
@@ -164,9 +182,10 @@ class OrderService:
         ) * Decimal(quantity)
         order_legs = [
             OrderLeg(
-                instruction="BUY_TO_OPEN" if leg.side == "LONG" else "SELL_TO_OPEN",
+                instruction=_instruction_for(leg.asset_type, leg.side),
                 quantity=quantity,
                 instrument_symbol=leg.occ_symbol,
+                asset_type=leg.asset_type,
             )
             for leg in signal.legs
         ]

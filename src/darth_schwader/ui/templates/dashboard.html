@@ -1,9 +1,16 @@
 {% extends "base.html" %}
 {% block title %}Dashboard — Darth Schwader{% endblock %}
 {% block body %}
-<header class="status-header" hx-get="/api/v1/status" hx-trigger="load, every 15s" hx-swap="innerHTML">
+{% include "partials/_mode_banner.html" %}
+
+<header class="status-header" hx-get="/api/v1/status" hx-trigger="load, every 15s, refresh" hx-swap="innerHTML">
   {% include "_status_header.html" %}
 </header>
+
+<div class="admin-bar">
+  {% include "partials/_ai_trigger.html" %}
+  {% include "partials/_kill_switch.html" %}
+</div>
 
 <main id="main" class="dashboard-grid">
   <section class="panel panel-signals" aria-labelledby="signals-heading">
@@ -11,7 +18,7 @@
       <h2 id="signals-heading">Signal queue</h2>
       <span class="panel-sub">HITL approvals</span>
     </div>
-    <div hx-get="/api/v1/signals" hx-trigger="load, every 20s" hx-swap="innerHTML" class="panel-body">
+    <div hx-get="/api/v1/signals" hx-trigger="load, every 20s, refresh" hx-swap="innerHTML" class="panel-body">
       {% include "_signals_queue.html" %}
     </div>
   </section>

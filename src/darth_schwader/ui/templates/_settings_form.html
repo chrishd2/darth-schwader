@@ -1,5 +1,7 @@
 {#
   PUT /api/v1/settings. Risk caps editable. `allow_naked=true` requires typing CONFIRM.
+  Paper↔Live mode toggle requires typing SWITCH_MODE and sends X-Confirm: SWITCH_MODE.
+  Restart required for mode change to take effect; restart_required flag is surfaced in response.
 #}
 <form
   class="settings-form"
@@ -8,6 +10,37 @@
   hx-swap="none"
   id="settings-form"
 >
+  <fieldset class="mode-gate {% if settings.paper_trading %}mode-gate--paper{% else %}mode-gate--live{% endif %}">
+    <legend>Trading mode</legend>
+    <div class="mode-toggle" role="radiogroup" aria-label="Trading mode">
+      <label class="mode-option">
+        <input
+          type="radio"
+          name="paper_trading"
+          id="paper-trading-paper"
+          value="true"
+          {% if settings.paper_trading %}checked{% endif %}
+        />
+        <span class="mode-option-label mode-option-label--paper">PAPER</span>
+      </label>
+      <label class="mode-option">
+        <input
+          type="radio"
+          name="paper_trading"
+          id="paper-trading-live"
+          value="false"
+          {% if not settings.paper_trading %}checked{% endif %}
+        />
+        <span class="mode-option-label mode-option-label--live">LIVE</span>
+      </label>
+    </div>
+    <p class="mode-note">Switching mode requires an app restart to take effect.</p>
+    <label class="field confirm-field" id="mode-confirm-field" hidden>
+      <span>Type <code>SWITCH_MODE</code> to arm the switch</span>
+      <input type="text" id="mode-confirm-input" autocomplete="off" spellcheck="false" />
+    </label>
+  </fieldset>
+
   <div class="form-grid">
     <label class="field">
       <span>Hard ceiling (per-trade %)</span>
@@ -75,20 +108,47 @@
   const form = document.getElementById('settings-form');
   if (!form || form.dataset.wired) return;
   form.dataset.wired = '1';
-  const toggle = document.getElementById('allow-naked-toggle');
-  const confirmField = document.getElementById('confirm-field');
-  const confirmInput = document.getElementById('confirm-input');
+
+  const nakedToggle = document.getElementById('allow-naked-toggle');
+  const nakedConfirmField = document.getElementById('confirm-field');
+  const nakedConfirmInput = document.getElementById('confirm-input');
+
+  const modeRadios = form.querySelectorAll('input[name="paper_trading"]');
+  const modeConfirmField = document.getElementById('mode-confirm-field');
+  const modeConfirmInput = document.getElementById('mode-confirm-input');
+
   const submit = document.getElementById('settings-submit');
 
-  function sync() {
-    const wantsNaked = !!toggle.checked;
-    confirmField.hidden = !wantsNaked;
-    const ok = !wantsNaked || (confirmInput.value.trim() === 'CONFIRM');
-    submit.disabled = !ok;
-    form.setAttribute('hx-headers', wantsNaked && ok ? '{"X-Confirm":"CONFIRM"}' : '{}');
+  const initialPaper = {{ 'true' if settings.paper_trading else 'false' }};
+
+  function currentPaper() {
+    for (const radio of modeRadios) {
+      if (radio.checked) return radio.value === 'true';
+    }
+    return initialPaper;
   }
-  toggle.addEventListener('change', sync);
-  confirmInput.addEventListener('input', sync);
+
+  function sync() {
+    const wantsNaked = !!nakedToggle.checked;
+    nakedConfirmField.hidden = !wantsNaked;
+    const nakedOk = !wantsNaked || (nakedConfirmInput.value.trim() === 'CONFIRM');
+
+    const modeChanging = currentPaper() !== initialPaper;
+    modeConfirmField.hidden = !modeChanging;
+    const modeOk = !modeChanging || (modeConfirmInput.value.trim() === 'SWITCH_MODE');
+
+    submit.disabled = !(nakedOk && modeOk);
+
+    const headers = {};
+    if (wantsNaked && nakedOk) headers['X-Confirm'] = 'CONFIRM';
+    if (modeChanging && modeOk) headers['X-Confirm'] = 'SWITCH_MODE';
+    form.setAttribute('hx-headers', JSON.stringify(headers));
+  }
+
+  nakedToggle.addEventListener('change', sync);
+  nakedConfirmInput.addEventListener('input', sync);
+  modeRadios.forEach((radio) => radio.addEventListener('change', sync));
+  modeConfirmInput.addEventListener('input', sync);
   sync();
 })();
 </script>

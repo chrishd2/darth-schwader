@@ -1,0 +1,62 @@
+{#
+  Manual AI trigger: POST /api/v1/admin/run-ai-now.
+  Rate-limited to one call per 60 seconds; backend returns HTTP 429 with retry_after.
+  Shows signals_generated count on success.
+#}
+<div class="ai-trigger" id="ai-trigger">
+  <button type="button" class="btn btn-ai" id="ai-trigger-btn">
+    <span class="btn-ai-glyph" aria-hidden="true">◇</span>
+    <span class="btn-ai-label">Run AI now</span>
+  </button>
+  <span class="ai-trigger-status" id="ai-trigger-status" role="status" aria-live="polite"></span>
+</div>
+
+<script>
+(function wireAiTrigger() {
+  const root = document.getElementById('ai-trigger');
+  if (!root || root.dataset.wired) return;
+  root.dataset.wired = '1';
+
+  const btn = document.getElementById('ai-trigger-btn');
+  const statusEl = document.getElementById('ai-trigger-status');
+
+  function setStatus(text, tone) {
+    statusEl.textContent = text;
+    statusEl.dataset.tone = tone || '';
+  }
+
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    setStatus('Running…', 'info');
+    try {
+      const response = await fetch('/api/v1/admin/run-ai-now', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (response.status === 429) {
+        const data = await response.json().catch(() => ({}));
+        const detail = data.detail || 'rate limited';
+        setStatus(detail, 'warn');
+        return;
+      }
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`HTTP ${response.status}: ${text}`);
+      }
+      const data = await response.json();
+      setStatus(`Generated ${data.signals_generated} signal(s)`, 'ok');
+      if (window.htmx && typeof window.htmx.trigger === 'function') {
+        const signalsPanel = document.querySelector('[hx-get="/api/v1/signals"]');
+        if (signalsPanel) window.htmx.trigger(signalsPanel, 'refresh');
+      }
+    } catch (err) {
+      setStatus('Failed — see console', 'err');
+      console.error('run-ai-now failed', err);
+    } finally {
+      setTimeout(() => {
+        btn.disabled = false;
+      }, 1500);
+    }
+  });
+})();
+</script>

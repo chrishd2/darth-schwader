@@ -1,0 +1,19 @@
+{#
+  Full-width trading-mode banner: PAPER (green) vs LIVE (red pulse).
+  Always visible above the dashboard so the operator never mistakes environment.
+  Reads `settings.paper_trading` from the dashboard render context.
+#}
+<div
+  class="mode-banner mode-banner--{{ 'paper' if settings.paper_trading else 'live' }}"
+  role="status"
+  aria-live="polite"
+>
+  <span class="mode-banner-dot" aria-hidden="true"></span>
+  <span class="mode-banner-label">
+    {% if settings.paper_trading %}
+      PAPER TRADING — simulated fills, no broker submission
+    {% else %}
+      LIVE TRADING — orders will be sent to Schwab
+    {% endif %}
+  </span>
+</div>

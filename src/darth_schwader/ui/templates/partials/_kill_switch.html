@@ -1,0 +1,136 @@
+{#
+  Kill switch: POST /api/v1/admin/panic with X-Confirm: STOP header.
+  Shift+Esc keyboard shortcut opens the confirm dialog; operator must type STOP.
+  Panic halts bot_state and cancels every cancellable open order server-side.
+#}
+<div class="kill-switch" id="kill-switch">
+  <button
+    type="button"
+    class="btn btn-kill"
+    id="kill-switch-trigger"
+    aria-haspopup="dialog"
+    aria-controls="kill-switch-dialog"
+    title="Shift+Esc"
+  >
+    <span class="btn-kill-glyph" aria-hidden="true">■</span>
+    <span class="btn-kill-label">PANIC</span>
+    <kbd class="btn-kill-kbd" aria-hidden="true">⇧Esc</kbd>
+  </button>
+
+  <dialog
+    class="kill-dialog"
+    id="kill-switch-dialog"
+    role="alertdialog"
+    aria-modal="true"
+    aria-labelledby="kill-dialog-title"
+    aria-describedby="kill-dialog-sub"
+  >
+    <form method="dialog" class="kill-dialog-form" id="kill-dialog-form">
+      <header class="kill-dialog-head">
+        <h2 id="kill-dialog-title">Halt the bot and cancel all open orders?</h2>
+        <p class="kill-dialog-sub" id="kill-dialog-sub">
+          This will set bot_state to HALTED and cancel every working order at the broker.
+          Type <code>STOP</code> to arm the panic button.
+        </p>
+      </header>
+      <label class="field">
+        <span>Type <code>STOP</code> to confirm</span>
+        <input
+          type="text"
+          id="kill-confirm-input"
+          autocomplete="off"
+          spellcheck="false"
+          aria-describedby="kill-dialog-sub"
+        />
+      </label>
+      <footer class="kill-dialog-foot">
+        <button type="button" class="btn" id="kill-cancel">Cancel</button>
+        <button
+          type="button"
+          class="btn btn-kill btn-kill--armed"
+          id="kill-confirm"
+          disabled
+        >
+          Halt &amp; cancel orders
+        </button>
+      </footer>
+    </form>
+  </dialog>
+</div>
+
+<script>
+(function wireKillSwitch() {
+  const root = document.getElementById('kill-switch');
+  if (!root || root.dataset.wired) return;
+  root.dataset.wired = '1';
+
+  const trigger = document.getElementById('kill-switch-trigger');
+  const dialog = document.getElementById('kill-switch-dialog');
+  const confirmInput = document.getElementById('kill-confirm-input');
+  const confirmBtn = document.getElementById('kill-confirm');
+  const cancelBtn = document.getElementById('kill-cancel');
+
+  function openDialog() {
+    confirmInput.value = '';
+    confirmBtn.disabled = true;
+    if (typeof dialog.showModal === 'function') {
+      dialog.showModal();
+    } else {
+      dialog.setAttribute('open', '');
+    }
+    confirmInput.focus();
+  }
+
+  function closeDialog() {
+    if (typeof dialog.close === 'function') {
+      dialog.close();
+    } else {
+      dialog.removeAttribute('open');
+    }
+  }
+
+  trigger.addEventListener('click', openDialog);
+  cancelBtn.addEventListener('click', closeDialog);
+
+  confirmInput.addEventListener('input', () => {
+    confirmBtn.disabled = confirmInput.value.trim() !== 'STOP';
+  });
+
+  confirmBtn.addEventListener('click', async () => {
+    if (confirmInput.value.trim() !== 'STOP') return;
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = 'Halting…';
+    try {
+      const response = await fetch('/api/v1/admin/panic', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Confirm': 'STOP',
+          'X-Actor': 'operator',
+        },
+      });
+      if (!response.ok) {
+        const detail = await response.text();
+        throw new Error(`HTTP ${response.status}: ${detail}`);
+      }
+      closeDialog();
+      if (window.htmx && typeof window.htmx.trigger === 'function') {
+        window.htmx.trigger('.status-header', 'refresh');
+      } else {
+        window.location.reload();
+      }
+    } catch (err) {
+      confirmBtn.textContent = 'Retry halt';
+      confirmBtn.disabled = false;
+      console.error('panic request failed', err);
+    }
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.shiftKey && event.key === 'Escape') {
+      event.preventDefault();
+      openDialog();
+    }
+  });
+})();
+</script>
