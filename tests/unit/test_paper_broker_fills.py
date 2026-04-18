@@ -133,6 +133,325 @@ async def test_paper_broker_equity_buy_then_sell_round_trip_is_cash_neutral() ->
     assert sell.status is OrderStatus.FILLED
     accounts = await client.get_accounts()
     assert accounts[0].cash_balance == Decimal("1000.00")
+    positions = await client.get_positions("PAPER-ACCOUNT")
+    assert positions == []
+
+
+@pytest.mark.asyncio
+async def test_paper_broker_tracks_equity_long_position_after_buy() -> None:
+    client = PaperBrokerClient(
+        starting_cash=Decimal("10000"),
+        slippage_bps=0,
+        session_penalty_bps=0,
+        price_source=StaticPriceSource({"AAPL": Decimal("150.00")}),
+    )
+    await client.submit_order(
+        "PAPER-ACCOUNT",
+        _order(_leg(instruction="BUY", symbol="AAPL", quantity=10, asset_type="EQUITY")),
+    )
+
+    positions = await client.get_positions("PAPER-ACCOUNT")
+
+    assert len(positions) == 1
+    position = positions[0]
+    assert position.underlying == "AAPL"
+    assert position.quantity == 10
+    assert position.entry_cost == Decimal("150.00")
+    assert position.legs[0].side == "LONG"
+    assert position.legs[0].quantity == 10
+
+
+@pytest.mark.asyncio
+async def test_paper_broker_weighted_avg_cost_on_repeated_buys() -> None:
+    client = PaperBrokerClient(
+        starting_cash=Decimal("100000"),
+        slippage_bps=0,
+        session_penalty_bps=0,
+        price_source=StaticPriceSource({"AAPL": Decimal("160.00")}),
+    )
+    await client.submit_order(
+        "PAPER-ACCOUNT",
+        _order(
+            _leg(instruction="BUY", symbol="AAPL", quantity=10, asset_type="EQUITY"),
+            client_order_id="buy-1",
+        ),
+    )
+    client._price_source = StaticPriceSource({"AAPL": Decimal("170.00")})
+    await client.submit_order(
+        "PAPER-ACCOUNT",
+        _order(
+            _leg(instruction="BUY", symbol="AAPL", quantity=10, asset_type="EQUITY"),
+            client_order_id="buy-2",
+        ),
+    )
+
+    positions = await client.get_positions("PAPER-ACCOUNT")
+
+    assert positions[0].quantity == 20
+    assert positions[0].entry_cost == Decimal("165.00")
+
+
+@pytest.mark.asyncio
+async def test_paper_broker_partial_sell_reduces_equity_position() -> None:
+    client = PaperBrokerClient(
+        starting_cash=Decimal("10000"),
+        slippage_bps=0,
+        session_penalty_bps=0,
+        price_source=StaticPriceSource({"AAPL": Decimal("150.00")}),
+    )
+    await client.submit_order(
+        "PAPER-ACCOUNT",
+        _order(
+            _leg(instruction="BUY", symbol="AAPL", quantity=10, asset_type="EQUITY"),
+            client_order_id="buy-1",
+        ),
+    )
+    await client.submit_order(
+        "PAPER-ACCOUNT",
+        _order(
+            _leg(instruction="SELL", symbol="AAPL", quantity=4, asset_type="EQUITY"),
+            client_order_id="sell-1",
+        ),
+    )
+
+    positions = await client.get_positions("PAPER-ACCOUNT")
+    assert len(positions) == 1
+    assert positions[0].quantity == 6
+    assert positions[0].entry_cost == Decimal("150.00")
+
+
+@pytest.mark.asyncio
+async def test_paper_broker_rejects_sell_more_than_owned() -> None:
+    client = PaperBrokerClient(
+        starting_cash=Decimal("10000"),
+        slippage_bps=0,
+        session_penalty_bps=0,
+        price_source=StaticPriceSource({"AAPL": Decimal("150.00")}),
+    )
+    await client.submit_order(
+        "PAPER-ACCOUNT",
+        _order(
+            _leg(instruction="BUY", symbol="AAPL", quantity=3, asset_type="EQUITY"),
+            client_order_id="buy-1",
+        ),
+    )
+
+    with pytest.raises(OrderRejectedError, match="insufficient long position"):
+        await client.submit_order(
+            "PAPER-ACCOUNT",
+            _order(
+                _leg(instruction="SELL", symbol="AAPL", quantity=5, asset_type="EQUITY"),
+                client_order_id="sell-oversized",
+            ),
+        )
+
+
+@pytest.mark.asyncio
+async def test_paper_broker_rejects_sell_without_position() -> None:
+    client = PaperBrokerClient(
+        starting_cash=Decimal("10000"),
+        slippage_bps=0,
+        session_penalty_bps=0,
+        price_source=StaticPriceSource({"AAPL": Decimal("150.00")}),
+    )
+
+    with pytest.raises(OrderRejectedError, match="no long position to close"):
+        await client.submit_order(
+            "PAPER-ACCOUNT",
+            _order(_leg(instruction="SELL", symbol="AAPL", quantity=1, asset_type="EQUITY")),
+        )
+
+
+@pytest.mark.asyncio
+async def test_paper_broker_option_buy_to_open_creates_long_position() -> None:
+    client = PaperBrokerClient(
+        starting_cash=Decimal("10000"),
+        slippage_bps=0,
+        session_penalty_bps=0,
+        price_source=StaticPriceSource({"AAPL  260619C00195000": Decimal("2.50")}),
+    )
+    await client.submit_order(
+        "PAPER-ACCOUNT",
+        _order(_leg(instruction="BUY_TO_OPEN", quantity=2)),
+    )
+
+    positions = await client.get_positions("PAPER-ACCOUNT")
+
+    assert len(positions) == 1
+    assert positions[0].underlying == "AAPL"
+    assert positions[0].quantity == 2
+    assert positions[0].entry_cost == Decimal("2.50")
+    assert positions[0].legs[0].side == "LONG"
+
+
+@pytest.mark.asyncio
+async def test_paper_broker_option_sell_to_close_reduces_long() -> None:
+    client = PaperBrokerClient(
+        starting_cash=Decimal("10000"),
+        slippage_bps=0,
+        session_penalty_bps=0,
+        price_source=StaticPriceSource({"AAPL  260619C00195000": Decimal("2.50")}),
+    )
+    await client.submit_order(
+        "PAPER-ACCOUNT",
+        _order(_leg(instruction="BUY_TO_OPEN", quantity=3), client_order_id="bto-1"),
+    )
+    await client.submit_order(
+        "PAPER-ACCOUNT",
+        _order(_leg(instruction="SELL_TO_CLOSE", quantity=2), client_order_id="stc-1"),
+    )
+
+    positions = await client.get_positions("PAPER-ACCOUNT")
+    assert len(positions) == 1
+    assert positions[0].quantity == 1
+    assert positions[0].legs[0].side == "LONG"
+
+
+@pytest.mark.asyncio
+async def test_paper_broker_option_sell_to_open_creates_short_position() -> None:
+    client = PaperBrokerClient(
+        starting_cash=Decimal("10000"),
+        slippage_bps=0,
+        session_penalty_bps=0,
+        price_source=StaticPriceSource({"AAPL  260619C00195000": Decimal("3.00")}),
+    )
+    await client.submit_order(
+        "PAPER-ACCOUNT",
+        _order(_leg(instruction="SELL_TO_OPEN", quantity=1)),
+    )
+
+    positions = await client.get_positions("PAPER-ACCOUNT")
+
+    assert len(positions) == 1
+    assert positions[0].quantity == 1
+    assert positions[0].entry_cost == Decimal("3.00")
+    assert positions[0].legs[0].side == "SHORT"
+    accounts = await client.get_accounts()
+    assert accounts[0].cash_balance == Decimal("10300.00")
+
+
+@pytest.mark.asyncio
+async def test_paper_broker_option_buy_to_close_reduces_short() -> None:
+    client = PaperBrokerClient(
+        starting_cash=Decimal("10000"),
+        slippage_bps=0,
+        session_penalty_bps=0,
+        price_source=StaticPriceSource({"AAPL  260619C00195000": Decimal("3.00")}),
+    )
+    await client.submit_order(
+        "PAPER-ACCOUNT",
+        _order(_leg(instruction="SELL_TO_OPEN", quantity=2), client_order_id="sto-1"),
+    )
+    await client.submit_order(
+        "PAPER-ACCOUNT",
+        _order(_leg(instruction="BUY_TO_CLOSE", quantity=1), client_order_id="btc-1"),
+    )
+
+    positions = await client.get_positions("PAPER-ACCOUNT")
+    assert len(positions) == 1
+    assert positions[0].quantity == 1
+    assert positions[0].legs[0].side == "SHORT"
+
+
+@pytest.mark.asyncio
+async def test_paper_broker_rejects_buy_to_close_more_than_short() -> None:
+    client = PaperBrokerClient(
+        starting_cash=Decimal("10000"),
+        slippage_bps=0,
+        session_penalty_bps=0,
+        price_source=StaticPriceSource({"AAPL  260619C00195000": Decimal("3.00")}),
+    )
+    await client.submit_order(
+        "PAPER-ACCOUNT",
+        _order(_leg(instruction="SELL_TO_OPEN", quantity=1), client_order_id="sto-1"),
+    )
+
+    with pytest.raises(OrderRejectedError, match="insufficient short position"):
+        await client.submit_order(
+            "PAPER-ACCOUNT",
+            _order(_leg(instruction="BUY_TO_CLOSE", quantity=2), client_order_id="btc-oversized"),
+        )
+
+
+@pytest.mark.asyncio
+async def test_paper_broker_rejects_buy_to_open_when_short_exists() -> None:
+    client = PaperBrokerClient(
+        starting_cash=Decimal("10000"),
+        slippage_bps=0,
+        session_penalty_bps=0,
+        price_source=StaticPriceSource({"AAPL  260619C00195000": Decimal("3.00")}),
+    )
+    await client.submit_order(
+        "PAPER-ACCOUNT",
+        _order(_leg(instruction="SELL_TO_OPEN", quantity=1), client_order_id="sto-1"),
+    )
+
+    with pytest.raises(OrderRejectedError, match="existing short position"):
+        await client.submit_order(
+            "PAPER-ACCOUNT",
+            _order(_leg(instruction="BUY_TO_OPEN", quantity=1), client_order_id="bto-wrong"),
+        )
+
+
+@pytest.mark.asyncio
+async def test_paper_broker_rejects_sell_to_open_when_long_exists() -> None:
+    client = PaperBrokerClient(
+        starting_cash=Decimal("10000"),
+        slippage_bps=0,
+        session_penalty_bps=0,
+        price_source=StaticPriceSource({"AAPL  260619C00195000": Decimal("3.00")}),
+    )
+    await client.submit_order(
+        "PAPER-ACCOUNT",
+        _order(_leg(instruction="BUY_TO_OPEN", quantity=1), client_order_id="bto-1"),
+    )
+
+    with pytest.raises(OrderRejectedError, match="existing long position"):
+        await client.submit_order(
+            "PAPER-ACCOUNT",
+            _order(_leg(instruction="SELL_TO_OPEN", quantity=1), client_order_id="sto-wrong"),
+        )
+
+
+@pytest.mark.asyncio
+async def test_paper_broker_get_positions_sets_current_mark_from_price_source() -> None:
+    prices: dict[str, Decimal] = {"AAPL": Decimal("150.00")}
+    source = StaticPriceSource(prices)
+    client = PaperBrokerClient(
+        starting_cash=Decimal("10000"),
+        slippage_bps=0,
+        session_penalty_bps=0,
+        price_source=source,
+    )
+    await client.submit_order(
+        "PAPER-ACCOUNT",
+        _order(_leg(instruction="BUY", symbol="AAPL", quantity=10, asset_type="EQUITY")),
+    )
+
+    client._price_source = StaticPriceSource({"AAPL": Decimal("160.00")})
+    positions = await client.get_positions("PAPER-ACCOUNT")
+
+    assert positions[0].current_mark == Decimal("160.00")
+
+
+@pytest.mark.asyncio
+async def test_paper_broker_net_liquidation_reflects_cash_plus_unrealized() -> None:
+    client = PaperBrokerClient(
+        starting_cash=Decimal("10000"),
+        slippage_bps=0,
+        session_penalty_bps=0,
+        price_source=StaticPriceSource({"AAPL": Decimal("150.00")}),
+    )
+    await client.submit_order(
+        "PAPER-ACCOUNT",
+        _order(_leg(instruction="BUY", symbol="AAPL", quantity=10, asset_type="EQUITY")),
+    )
+    client._price_source = StaticPriceSource({"AAPL": Decimal("160.00")})
+
+    accounts = await client.get_accounts()
+
+    assert accounts[0].cash_balance == Decimal("8500.00")
+    assert accounts[0].net_liquidation_value == Decimal("10100.00")
 
 
 @pytest.mark.asyncio
@@ -248,6 +567,159 @@ async def test_paper_broker_get_order_status_unknown_order_raises() -> None:
 
     with pytest.raises(BrokerError, match="unknown paper order"):
         await client.get_order_status("PAPER-ACCOUNT", "PAPER-DOES-NOT-EXIST")
+
+
+@pytest.mark.asyncio
+async def test_paper_broker_option_partial_close_records_realized_pnl() -> None:
+    client = PaperBrokerClient(
+        starting_cash=Decimal("10000"),
+        slippage_bps=0,
+        session_penalty_bps=0,
+        price_source=StaticPriceSource({"AAPL  260619C00195000": Decimal("2.50")}),
+    )
+    await client.submit_order(
+        "PAPER-ACCOUNT",
+        _order(_leg(instruction="BUY_TO_OPEN", quantity=3), client_order_id="bto-1"),
+    )
+    client._price_source = StaticPriceSource({"AAPL  260619C00195000": Decimal("4.00")})
+    await client.submit_order(
+        "PAPER-ACCOUNT",
+        _order(_leg(instruction="SELL_TO_CLOSE", quantity=2), client_order_id="stc-1"),
+    )
+
+    positions = await client.get_positions("PAPER-ACCOUNT")
+    assert len(positions) == 1
+    assert positions[0].quantity == 1
+    assert Decimal(positions[0].raw["realized_pnl"]) == Decimal("300.00")
+    accounts = await client.get_accounts()
+    assert Decimal(accounts[0].raw["realized_pnl"]) == Decimal("300.00")
+
+
+@pytest.mark.asyncio
+async def test_paper_broker_full_close_retains_realized_pnl_in_account() -> None:
+    client = PaperBrokerClient(
+        starting_cash=Decimal("10000"),
+        slippage_bps=0,
+        session_penalty_bps=0,
+        price_source=StaticPriceSource({"AAPL  260619C00195000": Decimal("2.50")}),
+    )
+    await client.submit_order(
+        "PAPER-ACCOUNT",
+        _order(_leg(instruction="BUY_TO_OPEN", quantity=2), client_order_id="bto-1"),
+    )
+    client._price_source = StaticPriceSource({"AAPL  260619C00195000": Decimal("3.25")})
+    await client.submit_order(
+        "PAPER-ACCOUNT",
+        _order(_leg(instruction="SELL_TO_CLOSE", quantity=2), client_order_id="stc-1"),
+    )
+
+    positions = await client.get_positions("PAPER-ACCOUNT")
+    assert positions == []
+    accounts = await client.get_accounts()
+    assert Decimal(accounts[0].raw["realized_pnl"]) == Decimal("150.00")
+
+
+@pytest.mark.asyncio
+async def test_paper_broker_short_option_close_records_realized_pnl() -> None:
+    client = PaperBrokerClient(
+        starting_cash=Decimal("10000"),
+        slippage_bps=0,
+        session_penalty_bps=0,
+        price_source=StaticPriceSource({"AAPL  260619C00195000": Decimal("3.00")}),
+    )
+    await client.submit_order(
+        "PAPER-ACCOUNT",
+        _order(_leg(instruction="SELL_TO_OPEN", quantity=2), client_order_id="sto-1"),
+    )
+    client._price_source = StaticPriceSource({"AAPL  260619C00195000": Decimal("1.50")})
+    await client.submit_order(
+        "PAPER-ACCOUNT",
+        _order(_leg(instruction="BUY_TO_CLOSE", quantity=2), client_order_id="btc-1"),
+    )
+
+    positions = await client.get_positions("PAPER-ACCOUNT")
+    assert positions == []
+    accounts = await client.get_accounts()
+    assert Decimal(accounts[0].raw["realized_pnl"]) == Decimal("300.00")
+
+
+@pytest.mark.asyncio
+async def test_paper_broker_short_weighted_avg_cost_on_repeated_sto() -> None:
+    client = PaperBrokerClient(
+        starting_cash=Decimal("100000"),
+        slippage_bps=0,
+        session_penalty_bps=0,
+        price_source=StaticPriceSource({"AAPL  260619C00195000": Decimal("2.00")}),
+    )
+    await client.submit_order(
+        "PAPER-ACCOUNT",
+        _order(_leg(instruction="SELL_TO_OPEN", quantity=2), client_order_id="sto-1"),
+    )
+    client._price_source = StaticPriceSource({"AAPL  260619C00195000": Decimal("4.00")})
+    await client.submit_order(
+        "PAPER-ACCOUNT",
+        _order(_leg(instruction="SELL_TO_OPEN", quantity=2), client_order_id="sto-2"),
+    )
+
+    positions = await client.get_positions("PAPER-ACCOUNT")
+    assert len(positions) == 1
+    assert positions[0].quantity == 4
+    assert positions[0].entry_cost == Decimal("3.0000")
+    assert positions[0].legs[0].side == "SHORT"
+
+
+@pytest.mark.asyncio
+async def test_paper_broker_multi_leg_same_symbol_sequences_through_working_state() -> None:
+    client = PaperBrokerClient(
+        starting_cash=Decimal("100000"),
+        slippage_bps=0,
+        session_penalty_bps=0,
+        price_source=StaticPriceSource({"AAPL": Decimal("150.00")}),
+    )
+    two_buy_legs = OrderRequest(
+        client_order_id="two-buys-same-symbol",
+        strategy_type=StrategyType.DEFINED_RISK_DIRECTIONAL,
+        quantity=2,
+        max_loss=Decimal("0"),
+        legs=[
+            _leg(instruction="BUY", symbol="AAPL", quantity=10, asset_type="EQUITY"),
+            _leg(instruction="BUY", symbol="AAPL", quantity=10, asset_type="EQUITY"),
+        ],
+    )
+    await client.submit_order("PAPER-ACCOUNT", two_buy_legs)
+
+    positions = await client.get_positions("PAPER-ACCOUNT")
+    assert len(positions) == 1
+    assert positions[0].quantity == 20
+    assert positions[0].entry_cost == Decimal("150.00")
+
+
+@pytest.mark.asyncio
+async def test_paper_broker_avg_cost_is_quantized_to_four_decimals() -> None:
+    client = PaperBrokerClient(
+        starting_cash=Decimal("100000"),
+        slippage_bps=0,
+        session_penalty_bps=0,
+        price_source=StaticPriceSource({"AAPL": Decimal("100.00")}),
+    )
+    await client.submit_order(
+        "PAPER-ACCOUNT",
+        _order(
+            _leg(instruction="BUY", symbol="AAPL", quantity=3, asset_type="EQUITY"),
+            client_order_id="buy-1",
+        ),
+    )
+    client._price_source = StaticPriceSource({"AAPL": Decimal("101.00")})
+    await client.submit_order(
+        "PAPER-ACCOUNT",
+        _order(
+            _leg(instruction="BUY", symbol="AAPL", quantity=4, asset_type="EQUITY"),
+            client_order_id="buy-2",
+        ),
+    )
+
+    positions = await client.get_positions("PAPER-ACCOUNT")
+    assert positions[0].entry_cost == Decimal("100.5714")
 
 
 @pytest.mark.asyncio

@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
+from dataclasses import dataclass, replace
 from decimal import Decimal
-from typing import Protocol
+from typing import Literal, Protocol
 
 from darth_schwader.broker.base import BrokerCapabilities, BrokerClient
 from darth_schwader.broker.exceptions import BrokerError, OrderRejectedError
@@ -14,8 +15,9 @@ from darth_schwader.broker.models import (
     OrderRequest,
     OrderResponse,
     Position,
+    PositionLeg,
 )
-from darth_schwader.domain.enums import OrderStatus
+from darth_schwader.domain.enums import OrderStatus, StrategyType
 from darth_schwader.logging import get_logger
 
 from .fills import (
@@ -27,9 +29,20 @@ from .fills import (
 
 SUPPORTED_ASSET_TYPES: frozenset[str] = frozenset({"OPTION", "EQUITY", "FUTURE"})
 
+LONG_OPEN_INSTRUCTIONS: frozenset[str] = frozenset({"BUY", "BUY_TO_OPEN"})
+SHORT_OPEN_INSTRUCTIONS: frozenset[str] = frozenset({"SELL_TO_OPEN"})
+LONG_CLOSE_INSTRUCTIONS: frozenset[str] = frozenset({"SELL", "SELL_TO_CLOSE"})
+SHORT_CLOSE_INSTRUCTIONS: frozenset[str] = frozenset({"BUY_TO_CLOSE"})
+
 _OPTION_MULTIPLIER = Decimal("100")
 _EQUITY_MULTIPLIER = Decimal("1")
 _FUTURE_MULTIPLIER = Decimal("1")
+
+_AVG_COST_QUANTUM = Decimal("0.0001")
+
+
+def _quantize_avg_cost(value: Decimal) -> Decimal:
+    return value.quantize(_AVG_COST_QUANTUM)
 
 
 class PriceSource(Protocol):
@@ -44,6 +57,16 @@ class StaticPriceSource:
     async def get_mark(self, symbol: str, asset_type: str) -> Decimal | None:
         del asset_type
         return self._prices.get(symbol)
+
+
+@dataclass(frozen=True)
+class _PaperPosition:
+    symbol: str
+    asset_type: str
+    quantity: int
+    avg_cost: Decimal
+    realized_pnl: Decimal
+    strategy_type: StrategyType
 
 
 class PaperBrokerClient(BrokerClient):
@@ -62,6 +85,8 @@ class PaperBrokerClient(BrokerClient):
         self._account_type = account_type
         self._cash = starting_cash
         self._orders: dict[str, OrderResponse] = {}
+        self._positions: dict[tuple[str, str], _PaperPosition] = {}
+        self._closed_realized_pnl: dict[tuple[str, str], Decimal] = {}
         self._order_counter = 0
         self._price_source = price_source
         self._fill_simulator = FillSimulator(
@@ -74,20 +99,62 @@ class PaperBrokerClient(BrokerClient):
 
     async def get_accounts(self) -> list[Account]:
         async with self._lock:
-            return [
-                Account(
-                    broker_account_id=self._account_id,
-                    account_type=self._account_type,
-                    net_liquidation_value=self._cash,
-                    cash_balance=self._cash,
-                    buying_power=self._cash,
-                    raw={"broker": "paper"},
-                )
-            ]
+            cash = self._cash
+            position_snapshot = list(self._positions.values())
+            open_realized = sum(
+                (pos.realized_pnl for pos in position_snapshot), Decimal("0")
+            )
+            closed_realized = sum(self._closed_realized_pnl.values(), Decimal("0"))
+
+        market_value = Decimal("0")
+        for pos in position_snapshot:
+            mark = await self._price_source.get_mark(pos.symbol, pos.asset_type)
+            if mark is None:
+                continue
+            multiplier = self._multiplier_for(pos.asset_type)
+            market_value += Decimal(pos.quantity) * multiplier * mark
+
+        net_liquidation = cash + market_value
+        total_realized = open_realized + closed_realized
+        return [
+            Account(
+                broker_account_id=self._account_id,
+                account_type=self._account_type,
+                net_liquidation_value=net_liquidation,
+                cash_balance=cash,
+                buying_power=cash,
+                raw={"broker": "paper", "realized_pnl": str(total_realized)},
+            )
+        ]
 
     async def get_positions(self, account_id: str) -> list[Position]:
         self._validate_account_id(account_id)
-        return []
+        async with self._lock:
+            snapshot = list(self._positions.values())
+
+        result: list[Position] = []
+        for pos in snapshot:
+            mark_price = await self._price_source.get_mark(pos.symbol, pos.asset_type)
+            qty_abs = abs(pos.quantity)
+            side: Literal["LONG", "SHORT"] = "LONG" if pos.quantity > 0 else "SHORT"
+            current_mark = mark_price
+            underlying = _underlying_from(pos.symbol, pos.asset_type)
+            result.append(
+                Position(
+                    underlying=underlying,
+                    strategy_type=pos.strategy_type,
+                    quantity=qty_abs,
+                    entry_cost=pos.avg_cost,
+                    current_mark=current_mark,
+                    max_loss=Decimal("0"),
+                    defined_risk=True,
+                    legs=[
+                        PositionLeg(symbol=pos.symbol, quantity=qty_abs, side=side),
+                    ],
+                    raw={"realized_pnl": str(pos.realized_pnl), "broker": "paper"},
+                )
+            )
+        return result
 
     async def get_chain(self, symbol: str) -> OptionChain:
         del symbol
@@ -106,8 +173,15 @@ class PaperBrokerClient(BrokerClient):
             fills = []
             asset_types: list[str] = []
             cash_delta = Decimal("0")
+            position_updates: list[tuple[tuple[str, str], _PaperPosition]] = []
+            working_positions: dict[tuple[str, str], _PaperPosition] = dict(self._positions)
+
             for leg in request.legs:
                 self._validate_leg(leg)
+                position_key: tuple[str, str] = (leg.instrument_symbol, leg.asset_type)
+                existing = working_positions.get(position_key)
+                self._validate_position_intent(leg, existing)
+
                 ref_price = await self._price_source.get_mark(
                     leg.instrument_symbol,
                     leg.asset_type,
@@ -121,11 +195,30 @@ class PaperBrokerClient(BrokerClient):
                 asset_types.append(leg.asset_type)
                 cash_delta += self._cash_effect(leg, fill.price)
 
+                next_position = self._apply_fill_to_position(
+                    leg,
+                    fill.price,
+                    existing,
+                    request.strategy_type,
+                )
+                position_updates.append((position_key, next_position))
+                working_positions[position_key] = next_position
+
             resulting_cash = self._cash + cash_delta
             if resulting_cash < Decimal("0"):
                 raise OrderRejectedError("insufficient paper cash")
 
             self._cash = resulting_cash
+            for update_key, update_position in position_updates:
+                if update_position.quantity == 0:
+                    prior = self._closed_realized_pnl.get(update_key, Decimal("0"))
+                    self._closed_realized_pnl[update_key] = (
+                        prior + update_position.realized_pnl
+                    )
+                    self._positions.pop(update_key, None)
+                else:
+                    self._positions[update_key] = update_position
+
             self._order_counter += 1
             broker_order_id = f"PAPER-{self._order_counter:08d}"
             response = OrderResponse(
@@ -184,6 +277,113 @@ class PaperBrokerClient(BrokerClient):
         if leg.instruction not in SUPPORTED_INSTRUCTIONS:
             raise OrderRejectedError(f"unsupported paper instruction: {leg.instruction}")
 
+    def _validate_position_intent(
+        self,
+        leg: OrderLeg,
+        existing: _PaperPosition | None,
+    ) -> None:
+        if leg.instruction in LONG_OPEN_INSTRUCTIONS:
+            if existing is not None and existing.quantity < 0:
+                raise OrderRejectedError(
+                    f"existing short position in {leg.instrument_symbol}; "
+                    "use BUY_TO_CLOSE before opening long",
+                )
+        elif leg.instruction in SHORT_OPEN_INSTRUCTIONS:
+            if existing is not None and existing.quantity > 0:
+                raise OrderRejectedError(
+                    f"existing long position in {leg.instrument_symbol}; "
+                    "use SELL_TO_CLOSE before opening short",
+                )
+        elif leg.instruction in LONG_CLOSE_INSTRUCTIONS:
+            if existing is None or existing.quantity <= 0:
+                raise OrderRejectedError(
+                    f"no long position to close in {leg.instrument_symbol}",
+                )
+            if leg.quantity > existing.quantity:
+                raise OrderRejectedError(
+                    f"insufficient long position in {leg.instrument_symbol}: "
+                    f"have {existing.quantity}, trying to close {leg.quantity}",
+                )
+        elif leg.instruction in SHORT_CLOSE_INSTRUCTIONS:
+            if existing is None or existing.quantity >= 0:
+                raise OrderRejectedError(
+                    f"no short position to close in {leg.instrument_symbol}",
+                )
+            if leg.quantity > abs(existing.quantity):
+                raise OrderRejectedError(
+                    f"insufficient short position in {leg.instrument_symbol}: "
+                    f"have {abs(existing.quantity)}, trying to cover {leg.quantity}",
+                )
+
+    def _apply_fill_to_position(
+        self,
+        leg: OrderLeg,
+        fill_price: Decimal,
+        existing: _PaperPosition | None,
+        strategy_type: StrategyType,
+    ) -> _PaperPosition:
+        if leg.instruction in LONG_OPEN_INSTRUCTIONS:
+            if existing is None or existing.quantity == 0:
+                return _PaperPosition(
+                    symbol=leg.instrument_symbol,
+                    asset_type=leg.asset_type,
+                    quantity=leg.quantity,
+                    avg_cost=_quantize_avg_cost(fill_price),
+                    realized_pnl=Decimal("0"),
+                    strategy_type=strategy_type,
+                )
+            new_qty = existing.quantity + leg.quantity
+            new_avg = _quantize_avg_cost(
+                (
+                    Decimal(existing.quantity) * existing.avg_cost
+                    + Decimal(leg.quantity) * fill_price
+                )
+                / Decimal(new_qty)
+            )
+            return replace(existing, quantity=new_qty, avg_cost=new_avg)
+
+        if leg.instruction in SHORT_OPEN_INSTRUCTIONS:
+            if existing is None or existing.quantity == 0:
+                return _PaperPosition(
+                    symbol=leg.instrument_symbol,
+                    asset_type=leg.asset_type,
+                    quantity=-leg.quantity,
+                    avg_cost=_quantize_avg_cost(fill_price),
+                    realized_pnl=Decimal("0"),
+                    strategy_type=strategy_type,
+                )
+            existing_abs = abs(existing.quantity)
+            new_abs = existing_abs + leg.quantity
+            new_avg = _quantize_avg_cost(
+                (
+                    Decimal(existing_abs) * existing.avg_cost
+                    + Decimal(leg.quantity) * fill_price
+                )
+                / Decimal(new_abs)
+            )
+            return replace(existing, quantity=-new_abs, avg_cost=new_avg)
+
+        multiplier = self._multiplier_for(leg.asset_type)
+        if leg.instruction in LONG_CLOSE_INSTRUCTIONS:
+            assert existing is not None
+            new_qty = existing.quantity - leg.quantity
+            realized = (
+                (fill_price - existing.avg_cost) * Decimal(leg.quantity) * multiplier
+            )
+            new_realized = existing.realized_pnl + realized
+            return replace(existing, quantity=new_qty, realized_pnl=new_realized)
+
+        if leg.instruction in SHORT_CLOSE_INSTRUCTIONS:
+            assert existing is not None
+            new_qty = existing.quantity + leg.quantity
+            realized = (
+                (existing.avg_cost - fill_price) * Decimal(leg.quantity) * multiplier
+            )
+            new_realized = existing.realized_pnl + realized
+            return replace(existing, quantity=new_qty, realized_pnl=new_realized)
+
+        raise OrderRejectedError(f"unsupported paper instruction: {leg.instruction}")
+
     def _cash_effect(self, leg: OrderLeg, fill_price: Decimal) -> Decimal:
         multiplier = self._multiplier_for(leg.asset_type)
         gross = Decimal(leg.quantity) * multiplier * fill_price
@@ -199,4 +399,20 @@ class PaperBrokerClient(BrokerClient):
         return _EQUITY_MULTIPLIER
 
 
-__all__ = ["SUPPORTED_ASSET_TYPES", "PaperBrokerClient", "PriceSource", "StaticPriceSource"]
+def _underlying_from(symbol: str, asset_type: str) -> str:
+    if asset_type == "OPTION":
+        root = symbol.split(maxsplit=1)[0] if " " in symbol else symbol
+        return root.strip()
+    return symbol
+
+
+__all__ = [
+    "LONG_CLOSE_INSTRUCTIONS",
+    "LONG_OPEN_INSTRUCTIONS",
+    "SHORT_CLOSE_INSTRUCTIONS",
+    "SHORT_OPEN_INSTRUCTIONS",
+    "SUPPORTED_ASSET_TYPES",
+    "PaperBrokerClient",
+    "PriceSource",
+    "StaticPriceSource",
+]
