@@ -16,7 +16,7 @@ from darth_schwader.domain.enums import CashLedgerReason
 router = APIRouter(tags=["cash-ledger"])
 
 
-@router.get("/cash-ledger")
+@router.get("/cash-ledger", response_model=None)
 async def cash_ledger(
     request: Request,
     session: AsyncSession = Depends(get_session),

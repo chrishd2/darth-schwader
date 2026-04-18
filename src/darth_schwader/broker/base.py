@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Protocol
 
 from darth_schwader.broker.models import (
@@ -9,6 +10,14 @@ from darth_schwader.broker.models import (
     OrderResponse,
     Position,
 )
+
+
+@dataclass(frozen=True)
+class BrokerCapabilities:
+    supports_options: bool
+    supports_equities: bool
+    supports_futures: bool
+    is_paper: bool
 
 
 class BrokerClient(Protocol):
@@ -29,3 +38,12 @@ class BrokerClient(Protocol):
 
     async def cancel_order(self, account_id: str, broker_order_id: str) -> None:
         ...
+
+    async def capabilities(self) -> BrokerCapabilities:
+        ...
+
+    async def close(self) -> None:
+        ...
+
+
+__all__ = ["BrokerCapabilities", "BrokerClient"]

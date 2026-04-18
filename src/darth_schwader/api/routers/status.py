@@ -10,7 +10,7 @@ from darth_schwader.api.templating import is_htmx, render_partial
 router = APIRouter(tags=["status"])
 
 
-@router.get("/status")
+@router.get("/status", response_model=None)
 async def status(request: Request) -> dict[str, object] | HTMLResponse:
     started_at = request.app.state.started_at
     uptime = (datetime.now(tz=UTC) - started_at).total_seconds()

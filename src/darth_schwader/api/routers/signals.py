@@ -17,7 +17,7 @@ from darth_schwader.risk.context import build_risk_context
 router = APIRouter(tags=["signals"])
 
 
-@router.get("/signals")
+@router.get("/signals", response_model=None)
 async def signals(
     request: Request,
     status: str | None = None,

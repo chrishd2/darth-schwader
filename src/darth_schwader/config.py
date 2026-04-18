@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from decimal import Decimal
 from functools import lru_cache
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import AnyHttpUrl, Field, SecretStr, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -32,13 +32,17 @@ class Settings(BaseSettings):
 
     account_type: Literal["CASH", "MARGIN", "PORTFOLIO_MARGIN"] = "CASH"
     options_approval_tier: int = 2
-    watchlist: list[str] = Field(
+    watchlist: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: ["SPY", "QQQ", "IWM", "AAPL", "NVDA", "TSLA", "MSFT", "META"]
     )
 
     paper_trading: bool = True
     hitl_required: bool = True
     allow_naked: bool = False
+
+    paper_initial_cash: Decimal = Decimal("100000")
+    paper_slippage_bps: int = 3
+    paper_session_penalty_bps: int = 10
 
     max_risk_per_trade_pct: Decimal = Decimal("0.25")
     preferred_max_risk_per_trade_pct: Decimal = Decimal("0.05")
@@ -49,9 +53,12 @@ class Settings(BaseSettings):
     min_dte_days: int = 14
     max_dte_days: int = 60
 
-    ai_provider: Literal["claude", "openai", "none"] = "claude"
-    anthropic_api_key: SecretStr | None = None
-    openai_api_key: SecretStr | None = None
+    ai_provider: Literal["openrouter", "none"] = "openrouter"
+    openrouter_api_key: SecretStr | None = None
+    openrouter_model: str = "anthropic/claude-sonnet-4.6"
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    openrouter_http_referer: str | None = None
+    openrouter_app_title: str | None = "Darth Schwader"
     iv_spike_threshold_pct: Decimal = Decimal("90")
     polygon_api_key: SecretStr | None = None
     polygon_backfill_days: int = 365
@@ -72,6 +79,7 @@ class Settings(BaseSettings):
         "max_daily_drawdown_pct",
         "max_weekly_drawdown_pct",
         "max_underlying_allocation_pct",
+        "paper_initial_cash",
         mode="before",
     )
     @classmethod
@@ -92,6 +100,20 @@ class Settings(BaseSettings):
     def _validate_positive_ints(cls, value: int) -> int:
         if value <= 0:
             raise ValueError("value must be greater than zero")
+        return value
+
+    @field_validator("paper_slippage_bps", "paper_session_penalty_bps")
+    @classmethod
+    def _validate_nonnegative_ints(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError("value must be greater than or equal to zero")
+        return value
+
+    @field_validator("paper_initial_cash")
+    @classmethod
+    def _validate_paper_initial_cash(cls, value: Decimal) -> Decimal:
+        if value < Decimal("0"):
+            raise ValueError("paper_initial_cash must be greater than or equal to zero")
         return value
 
     @model_validator(mode="after")

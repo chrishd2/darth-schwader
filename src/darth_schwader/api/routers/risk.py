@@ -12,7 +12,7 @@ from darth_schwader.db.models import RiskEvent
 router = APIRouter(tags=["risk"])
 
 
-@router.get("/risk-events")
+@router.get("/risk-events", response_model=None)
 async def risk_events(
     request: Request,
     signal_id: int | None = None,

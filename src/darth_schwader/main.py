@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 
 import uvicorn
@@ -50,10 +51,18 @@ def create_app() -> FastAPI:
 
     @app.get("/dashboard", response_class=HTMLResponse)
     async def dashboard(request: Request) -> HTMLResponse:
+        started_at = getattr(request.app.state, "started_at", datetime.now(tz=UTC))
+        uptime_seconds = (datetime.now(tz=UTC) - started_at).total_seconds()
         return templates.TemplateResponse(
             request=request,
             name="dashboard.html",
-            context={"request": request, "settings": settings},
+            context={
+                "request": request,
+                "settings": settings,
+                "bot_state": getattr(request.app.state, "bot_state", "UNKNOWN"),
+                "uptime_seconds": uptime_seconds,
+                "last_scheduler_run": getattr(request.app.state, "last_scheduler_run", None),
+            },
         )
 
     for router in (

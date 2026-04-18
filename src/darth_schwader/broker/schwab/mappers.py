@@ -8,7 +8,6 @@ from darth_schwader.broker.models import (
     Account,
     OptionChain,
     OptionContract,
-    OrderLeg,
     OrderRequest,
     OrderResponse,
     Position,

@@ -6,7 +6,7 @@ from typing import Any
 
 import httpx
 
-from darth_schwader.broker.base import BrokerClient
+from darth_schwader.broker.base import BrokerCapabilities, BrokerClient
 from darth_schwader.broker.exceptions import (
     AuthExpiredError,
     BrokerError,
@@ -19,7 +19,7 @@ from darth_schwader.config import Settings
 from darth_schwader.db.repositories.tokens import TokenRepository
 from darth_schwader.logging import get_logger
 
-from .endpoints import ACCOUNTS_URL, ORDER_URL, ORDERS_URL, OPTION_CHAINS_URL, POSITIONS_URL
+from .endpoints import ACCOUNTS_URL, OPTION_CHAINS_URL, ORDER_URL, ORDERS_URL, POSITIONS_URL
 from .mappers import (
     map_account,
     map_option_chain,
@@ -89,6 +89,14 @@ class SchwabApiClient(BrokerClient):
         await self._request(
             "DELETE",
             ORDER_URL.format(account_id=account_id, order_id=broker_order_id),
+        )
+
+    async def capabilities(self) -> BrokerCapabilities:
+        return BrokerCapabilities(
+            supports_options=True,
+            supports_equities=True,
+            supports_futures=False,
+            is_paper=False,
         )
 
     async def _request(

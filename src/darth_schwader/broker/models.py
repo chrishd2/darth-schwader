@@ -90,7 +90,7 @@ class OrderLeg(BaseModel):
     instruction: str
     quantity: int
     instrument_symbol: str
-    asset_type: str = "OPTION"
+    asset_type: Literal["OPTION", "EQUITY", "FUTURE"] = "OPTION"
 
 
 class OrderRequest(BaseModel):

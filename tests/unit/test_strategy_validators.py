@@ -17,6 +17,24 @@ def _expiration(offset: int = 30) -> str:
     return (datetime.now(tz=UTC) + timedelta(days=offset)).date().isoformat()
 
 
+def _leg(
+    occ_symbol: str,
+    side: str,
+    quantity: int,
+    strike: Decimal,
+    expiration: str,
+    option_type: str,
+) -> StrategyLeg:
+    return StrategyLeg(
+        occ_symbol=occ_symbol,
+        side=side,  # type: ignore[arg-type]
+        quantity=quantity,
+        strike=strike,
+        expiration=expiration,
+        option_type=option_type,  # type: ignore[arg-type]
+    )
+
+
 def _signal(strategy_type: StrategyType, legs: list[StrategyLeg], **features: str) -> StrategySignal:
     return StrategySignal(
         signal_id=f"sig-{strategy_type.value}",
@@ -38,13 +56,13 @@ def test_vertical_spread_validator_and_collateral() -> None:
     valid = _signal(
         StrategyType.VERTICAL_SPREAD,
         [
-            StrategyLeg("AAPL  260619C00195000", "LONG", 1, Decimal("195"), _expiration(), "CALL"),
-            StrategyLeg("AAPL  260619C00200000", "SHORT", 1, Decimal("200"), _expiration(), "CALL"),
+            _leg("AAPL  260619C00195000", "LONG", 1, Decimal("195"), _expiration(), "CALL"),
+            _leg("AAPL  260619C00200000", "SHORT", 1, Decimal("200"), _expiration(), "CALL"),
         ],
     )
     invalid = _signal(
         StrategyType.VERTICAL_SPREAD,
-        [StrategyLeg("AAPL  260619C00195000", "LONG", 1, Decimal("195"), _expiration(), "CALL")],
+        [_leg("AAPL  260619C00195000", "LONG", 1, Decimal("195"), _expiration(), "CALL")],
     )
     assert spec.validate(valid) == []
     assert spec.validate(invalid)
@@ -56,15 +74,15 @@ def test_iron_condor_validator_and_collateral() -> None:
     valid = _signal(
         StrategyType.IRON_CONDOR,
         [
-            StrategyLeg("AAPL  260619P00180000", "LONG", 1, Decimal("180"), _expiration(), "PUT"),
-            StrategyLeg("AAPL  260619P00185000", "SHORT", 1, Decimal("185"), _expiration(), "PUT"),
-            StrategyLeg("AAPL  260619C00205000", "SHORT", 1, Decimal("205"), _expiration(), "CALL"),
-            StrategyLeg("AAPL  260619C00210000", "LONG", 1, Decimal("210"), _expiration(), "CALL"),
+            _leg("AAPL  260619P00180000", "LONG", 1, Decimal("180"), _expiration(), "PUT"),
+            _leg("AAPL  260619P00185000", "SHORT", 1, Decimal("185"), _expiration(), "PUT"),
+            _leg("AAPL  260619C00205000", "SHORT", 1, Decimal("205"), _expiration(), "CALL"),
+            _leg("AAPL  260619C00210000", "LONG", 1, Decimal("210"), _expiration(), "CALL"),
         ],
     )
     invalid = _signal(
         StrategyType.IRON_CONDOR,
-        valid.legs[:3],
+        list(valid.legs[:3]),
     )
     assert spec.validate(valid) == []
     assert spec.validate(invalid)
@@ -76,11 +94,11 @@ def test_defined_risk_directional_validator_and_collateral() -> None:
     valid = _signal(
         StrategyType.DEFINED_RISK_DIRECTIONAL,
         [
-            StrategyLeg("AAPL  260619P00190000", "LONG", 1, Decimal("190"), _expiration(), "PUT"),
-            StrategyLeg("AAPL  260619P00185000", "SHORT", 1, Decimal("185"), _expiration(), "PUT"),
+            _leg("AAPL  260619P00190000", "LONG", 1, Decimal("190"), _expiration(), "PUT"),
+            _leg("AAPL  260619P00185000", "SHORT", 1, Decimal("185"), _expiration(), "PUT"),
         ],
     )
-    invalid = _signal(StrategyType.DEFINED_RISK_DIRECTIONAL, valid.legs[:1])
+    invalid = _signal(StrategyType.DEFINED_RISK_DIRECTIONAL, list(valid.legs[:1]))
     assert spec.validate(valid) == []
     assert spec.validate(invalid)
     assert spec.compute_required_collateral(valid, Decimal("195")) == Decimal("500")
@@ -90,11 +108,11 @@ def test_cash_secured_put_validator_and_collateral() -> None:
     spec = CashSecuredPutSpec()
     valid = _signal(
         StrategyType.CASH_SECURED_PUT,
-        [StrategyLeg("AAPL  260619P00195000", "SHORT", 1, Decimal("195"), _expiration(), "PUT")],
+        [_leg("AAPL  260619P00195000", "SHORT", 1, Decimal("195"), _expiration(), "PUT")],
     )
     invalid = _signal(
         StrategyType.CASH_SECURED_PUT,
-        [StrategyLeg("AAPL  260619C00195000", "SHORT", 1, Decimal("195"), _expiration(), "CALL")],
+        [_leg("AAPL  260619C00195000", "SHORT", 1, Decimal("195"), _expiration(), "CALL")],
     )
     assert spec.validate(valid) == []
     assert spec.validate(invalid)
@@ -105,11 +123,11 @@ def test_covered_call_validator_and_collateral() -> None:
     spec = CoveredCallSpec()
     valid = _signal(
         StrategyType.COVERED_CALL,
-        [StrategyLeg("AAPL  260619C00200000", "SHORT", 1, Decimal("200"), _expiration(), "CALL")],
+        [_leg("AAPL  260619C00200000", "SHORT", 1, Decimal("200"), _expiration(), "CALL")],
     )
     invalid = _signal(
         StrategyType.COVERED_CALL,
-        [StrategyLeg("AAPL  260619P00200000", "SHORT", 1, Decimal("200"), _expiration(), "PUT")],
+        [_leg("AAPL  260619P00200000", "SHORT", 1, Decimal("200"), _expiration(), "PUT")],
     )
     assert spec.validate(valid) == []
     assert spec.validate(invalid)
@@ -121,16 +139,16 @@ def test_calendar_spread_validator_and_collateral() -> None:
     valid = _signal(
         StrategyType.CALENDAR_SPREAD,
         [
-            StrategyLeg("AAPL  260516C00195000", "SHORT", 1, Decimal("195"), _expiration(20), "CALL"),
-            StrategyLeg("AAPL  260619C00195000", "LONG", 1, Decimal("195"), _expiration(50), "CALL"),
+            _leg("AAPL  260516C00195000", "SHORT", 1, Decimal("195"), _expiration(20), "CALL"),
+            _leg("AAPL  260619C00195000", "LONG", 1, Decimal("195"), _expiration(50), "CALL"),
         ],
         debit_per_contract="2.50",
     )
     invalid = _signal(
         StrategyType.CALENDAR_SPREAD,
         [
-            StrategyLeg("AAPL  260516C00195000", "SHORT", 1, Decimal("195"), _expiration(20), "CALL"),
-            StrategyLeg("AAPL  260619C00200000", "LONG", 1, Decimal("200"), _expiration(50), "CALL"),
+            _leg("AAPL  260516C00195000", "SHORT", 1, Decimal("195"), _expiration(20), "CALL"),
+            _leg("AAPL  260619C00200000", "LONG", 1, Decimal("200"), _expiration(50), "CALL"),
         ],
         debit_per_contract="2.50",
     )

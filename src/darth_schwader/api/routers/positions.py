@@ -12,7 +12,7 @@ from darth_schwader.db.models import Position
 router = APIRouter(tags=["positions"])
 
 
-@router.get("/positions")
+@router.get("/positions", response_model=None)
 async def positions(
     request: Request,
     session: AsyncSession = Depends(get_session),
