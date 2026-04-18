@@ -1,0 +1,119 @@
+{#
+  Polls: hx-get /api/v1/signals every 20s.
+  Each APPROVED_AWAITING_HITL row exposes a quantity override + hold-to-confirm Submit.
+#}
+<ul class="signal-list">
+  {% for s in signals|default([]) %}
+  {% set size_warn = s.suggested_quantity and s.preferred_quantity and s.preferred_quantity < s.suggested_quantity %}
+  {% set risk_alert = s.suggested_max_loss and nlv and (s.suggested_max_loss|float / nlv|float) > 0.10 %}
+  <li class="signal-row{% if size_warn %} signal-row--warn{% endif %}{% if risk_alert %} signal-row--alert{% endif %}" data-signal-id="{{ s.id }}">
+    <header class="signal-head">
+      <span class="signal-underlying">{{ s.underlying }}</span>
+      <span class="chip chip-strategy">{{ s.strategy_type }}</span>
+      {% if s.iv_rank is defined %}
+      <span class="chip chip-iv">IV{{ s.iv_rank }}</span>
+      {% endif %}
+      {% if s.regime is defined %}
+      <span class="chip chip-regime chip-regime-{{ s.regime|lower }}">{{ s.regime }}</span>
+      {% endif %}
+      <span class="chip chip-status chip-status-{{ s.status|lower|replace('_','-') }}">{{ s.status }}</span>
+    </header>
+
+    {% if s.thesis %}
+    <details class="thesis">
+      <summary>Thesis</summary>
+      <p>{{ s.thesis }}</p>
+    </details>
+    {% endif %}
+
+    {% if s.warnings %}
+    <ul class="warnings">
+      {% for w in s.warnings %}<li>{{ w.reason_text|default(w) }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+
+    <dl class="sizing">
+      <div><dt>Suggested</dt><dd>{{ s.suggested_quantity|default('—') }}</dd></div>
+      <div><dt>Preferred</dt><dd>{{ s.preferred_quantity|default('—') }}</dd></div>
+      <div><dt>Ceiling</dt><dd>{{ s.ceiling_quantity|default('—') }}</dd></div>
+      <div><dt>Max loss</dt><dd>{{ s.suggested_max_loss|default('—') }}</dd></div>
+    </dl>
+
+    {% if s.status == 'APPROVED_AWAITING_HITL' %}
+    <form class="signal-controls" onsubmit="return false">
+      <label class="field">
+        <span>Qty</span>
+        <input
+          type="number"
+          id="qty-{{ s.id }}"
+          name="override_quantity"
+          min="1"
+          max="{{ s.ceiling_quantity|default(1) }}"
+          value="{{ s.preferred_quantity|default(1) }}"
+          inputmode="numeric"
+          required
+        />
+      </label>
+
+      <button
+        type="button"
+        class="btn btn-submit"
+        data-hold-target="submit-{{ s.id }}"
+        hx-post="/api/v1/signals/{{ s.id }}/submit"
+        hx-vals='js:{override_quantity: parseInt(document.getElementById("qty-{{ s.id }}").value, 10)}'
+        hx-ext="json-enc"
+        hx-confirm="Submit {{ s.strategy_type }} on {{ s.underlying }} for max_loss {{ s.suggested_max_loss|default('—') }}?"
+        hx-swap="outerHTML"
+        hx-target="closest .signal-row"
+      >
+        <span class="btn-label">Hold to submit</span>
+        <span class="btn-progress" aria-hidden="true"></span>
+      </button>
+
+      <button
+        type="button"
+        class="btn btn-reject"
+        hx-post="/api/v1/signals/{{ s.id }}/reject"
+        hx-prompt="Reason for rejection?"
+        hx-vals='js:{reason: event.detail && event.detail.prompt ? event.detail.prompt : "manual"}'
+        hx-ext="json-enc"
+        hx-swap="outerHTML"
+        hx-target="closest .signal-row"
+      >Reject</button>
+    </form>
+    {% endif %}
+  </li>
+  {% else %}
+  <li class="muted">No signals in queue.</li>
+  {% endfor %}
+</ul>
+
+<script>
+(function enableHoldToSubmit() {
+  if (window.__holdWired) return;
+  window.__holdWired = true;
+  const HOLD_MS = 1500;
+  document.addEventListener('pointerdown', function (ev) {
+    const btn = ev.target.closest && ev.target.closest('.btn-submit');
+    if (!btn) return;
+    let armed = false;
+    const progress = btn.querySelector('.btn-progress');
+    if (progress) progress.style.setProperty('--hold-ms', HOLD_MS + 'ms');
+    btn.classList.add('btn-submit--holding');
+    const timer = setTimeout(function () { armed = true; btn.classList.add('btn-submit--armed'); }, HOLD_MS);
+    const cancel = function () {
+      clearTimeout(timer);
+      btn.classList.remove('btn-submit--holding', 'btn-submit--armed');
+      document.removeEventListener('pointerup', onUp);
+      document.removeEventListener('pointercancel', cancel);
+      document.removeEventListener('pointerleave', cancel, true);
+    };
+    const onUp = function () {
+      if (armed && window.htmx) { window.htmx.trigger(btn, 'hx-confirm-hold'); btn.click(); }
+      cancel();
+    };
+    document.addEventListener('pointerup', onUp, { once: true });
+    document.addEventListener('pointercancel', cancel, { once: true });
+  });
+})();
+</script>

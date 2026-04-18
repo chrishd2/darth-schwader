@@ -1,0 +1,31 @@
+{
+  "results": [
+    {
+      "details": {
+        "ticker": "O:AAPL240621C00195000",
+        "expiration_date": "2024-06-21",
+        "strike_price": 195,
+        "contract_type": "call",
+        "exercise_style": "american"
+      },
+      "last_quote": {
+        "bid": 1.0,
+        "ask": 1.1,
+        "last_updated": 1713389400000
+      },
+      "day": {
+        "close": 1.05,
+        "volume": 20
+      },
+      "greeks": {
+        "delta": 0.31,
+        "gamma": 0.02,
+        "theta": -0.01,
+        "vega": 0.05,
+        "rho": 0.01
+      },
+      "implied_volatility": 0.25,
+      "open_interest": 100
+    }
+  ]
+}

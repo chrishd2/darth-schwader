@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Darth Schwader{% endblock %}
+{% block body %}
+<main id="main" class="index-hero">
+  <h1>Darth Schwader</h1>
+  <p class="subtitle">Single-tenant options trading operator console.</p>
+  <p><a class="btn btn-primary" href="/dashboard">Open dashboard</a></p>
+  <p class="muted">Phase 1. Paper trading {% if settings.paper_trading %}ON{% else %}OFF{% endif %}.</p>
+</main>
+{% endblock %}

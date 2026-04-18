@@ -1,0 +1,41 @@
+{#
+  Polls: hx-get /api/v1/positions every 30s.
+  `positions` comes from JSON endpoint; if rendered directly, it's a list of rows.
+#}
+<table class="table table-positions">
+  <thead>
+    <tr>
+      <th scope="col">Underlying</th>
+      <th scope="col">Strategy</th>
+      <th scope="col" class="num">Qty</th>
+      <th scope="col" class="num">Entry</th>
+      <th scope="col" class="num">Mark</th>
+      <th scope="col" class="num">Max loss</th>
+      <th scope="col">Risk</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for p in positions|default([]) %}
+    <tr>
+      <td>{{ p.underlying }}</td>
+      <td>{{ p.strategy_type }}</td>
+      <td class="num">{{ p.quantity }}</td>
+      <td class="num">{{ p.entry_cost|default('—') }}</td>
+      <td class="num">{{ p.current_mark|default('—') }}</td>
+      <td class="num neg">{{ p.max_loss }}</td>
+      <td>
+        {% if p.defined_risk %}
+          <span class="chip chip-defined">Defined</span>
+        {% else %}
+          <span class="chip chip-warn">Undefined</span>
+        {% endif %}
+        {% if settings and settings.allow_naked and p.is_naked %}
+          <span class="chip chip-naked">Naked</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="7" class="muted">No open positions.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>

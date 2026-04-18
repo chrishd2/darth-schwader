@@ -1,0 +1,33 @@
+{#
+  Polls: hx-get /api/v1/status every 15s.
+  Sticky top band with the six operator-critical values.
+#}
+<div class="status-bar">
+  <span class="badge {% if settings.paper_trading %}badge-paper{% else %}badge-live{% endif %}">
+    {% if settings.paper_trading %}PAPER{% else %}LIVE{% endif %}
+  </span>
+  <span class="badge {% if settings.hitl_required %}badge-hitl{% else %}badge-muted{% endif %}">
+    HITL {% if settings.hitl_required %}ON{% else %}OFF{% endif %}
+  </span>
+  <span class="badge {% if bot_state == 'ACTIVE' %}badge-active{% else %}badge-halted{% endif %}">
+    {{ bot_state or 'UNKNOWN' }}
+  </span>
+  <span class="metric">
+    <span class="metric-label">Uptime</span>
+    <span class="metric-value">{{ uptime_seconds|round(0)|int }}s</span>
+  </span>
+  <span class="metric">
+    <span class="metric-label">Last run</span>
+    <span class="metric-value">{{ last_scheduler_run or '—' }}</span>
+  </span>
+  <span class="metric">
+    <span class="metric-label">Day P&amp;L</span>
+    <span class="metric-value {% if day_pnl_pct is defined and day_pnl_pct < 0 %}neg{% elif day_pnl_pct is defined and day_pnl_pct > 0 %}pos{% endif %}">
+      {{ day_pnl_pct|default('—') }}
+    </span>
+  </span>
+  <span class="metric">
+    <span class="metric-label">Settled</span>
+    <span class="metric-value">{{ settled_cash|default('—') }}</span>
+  </span>
+</div>

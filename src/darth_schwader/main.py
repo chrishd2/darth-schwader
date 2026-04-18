@@ -12,6 +12,7 @@ from darth_schwader.api.error_handlers import register_exception_handlers
 from darth_schwader.api.routers import (
     admin_router,
     broker_router,
+    cash_ledger_router,
     chains_router,
     health_router,
     orders_router,
@@ -41,19 +42,25 @@ def create_app() -> FastAPI:
 
     @app.get("/", response_class=HTMLResponse)
     async def index(request: Request) -> HTMLResponse:
-        template_name = "index.html"
-        if (TEMPLATES_DIR / template_name).exists():
-            return templates.TemplateResponse(
-                request=request,
-                name=template_name,
-                context={"request": request, "settings": settings},
-            )
-        return HTMLResponse("<html><body><h1>Darth Schwader</h1><p>Phase 1 scaffold.</p></body></html>")
+        return templates.TemplateResponse(
+            request=request,
+            name="index.html",
+            context={"request": request, "settings": settings},
+        )
+
+    @app.get("/dashboard", response_class=HTMLResponse)
+    async def dashboard(request: Request) -> HTMLResponse:
+        return templates.TemplateResponse(
+            request=request,
+            name="dashboard.html",
+            context={"request": request, "settings": settings},
+        )
 
     for router in (
         health_router,
         status_router,
         broker_router,
+        cash_ledger_router,
         chains_router,
         positions_router,
         orders_router,

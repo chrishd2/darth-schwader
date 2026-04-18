@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — Darth Schwader{% endblock %}
+{% block body %}
+<header class="status-header" hx-get="/api/v1/status" hx-trigger="load, every 15s" hx-swap="innerHTML">
+  {% include "_status_header.html" %}
+</header>
+
+<main id="main" class="dashboard-grid">
+  <section class="panel panel-signals" aria-labelledby="signals-heading">
+    <div class="panel-head">
+      <h2 id="signals-heading">Signal queue</h2>
+      <span class="panel-sub">HITL approvals</span>
+    </div>
+    <div hx-get="/api/v1/signals" hx-trigger="load, every 20s" hx-swap="innerHTML" class="panel-body">
+      {% include "_signals_queue.html" %}
+    </div>
+  </section>
+
+  <aside class="panel panel-cash" aria-labelledby="cash-heading">
+    <div class="panel-head">
+      <h2 id="cash-heading">Cash ledger</h2>
+      <span class="panel-sub">T+1 settlement</span>
+    </div>
+    <div hx-get="/api/v1/cash-ledger" hx-trigger="load, every 60s" hx-swap="innerHTML" class="panel-body">
+      {% include "_cash_ledger.html" %}
+    </div>
+  </aside>
+
+  <section class="panel panel-positions" aria-labelledby="positions-heading">
+    <div class="panel-head">
+      <h2 id="positions-heading">Positions</h2>
+    </div>
+    <div hx-get="/api/v1/positions" hx-trigger="load, every 30s" hx-swap="innerHTML" class="panel-body">
+      {% include "_positions_table.html" %}
+    </div>
+  </section>
+
+  <section class="panel panel-equity" aria-labelledby="equity-heading">
+    <div class="panel-head">
+      <h2 id="equity-heading">Equity</h2>
+    </div>
+    <div class="panel-body">
+      {% include "_equity_sparkline.html" %}
+    </div>
+  </section>
+
+  <section class="panel panel-risk-log" aria-labelledby="risk-heading">
+    <div class="panel-head">
+      <h2 id="risk-heading">Risk log</h2>
+    </div>
+    <div hx-get="/api/v1/risk-events" hx-trigger="load, every 30s" hx-swap="innerHTML" class="panel-body">
+      {% include "_risk_log.html" %}
+    </div>
+  </section>
+
+  <section class="panel panel-settings" aria-labelledby="settings-heading">
+    <div class="panel-head">
+      <h2 id="settings-heading">Settings</h2>
+    </div>
+    <div class="panel-body">
+      {% include "_settings_form.html" %}
+    </div>
+  </section>
+</main>
+{% endblock %}

@@ -1,0 +1,17 @@
+{#
+  Minimal SVG sparkline; data points provided as `equity_points` context.
+#}
+{% set points = equity_points|default([]) %}
+{% if points %}
+<svg class="sparkline" viewBox="0 0 100 30" preserveAspectRatio="none" role="img" aria-label="Net liquidation value history">
+  <polyline
+    class="sparkline-line"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="1.2"
+    points="{% for v in points %}{{ loop.index0 * (100 / (points|length - 1 if points|length > 1 else 1)) }},{{ 30 - (v|float - points|min) / ((points|max - points|min) or 1) * 28 }} {% endfor %}"
+  />
+</svg>
+{% else %}
+<p class="muted">No equity history yet.</p>
+{% endif %}

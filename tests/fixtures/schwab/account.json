@@ -1,0 +1,12 @@
+{
+  "securitiesAccount": {
+    "accountNumber": "123456789",
+    "type": "CASH",
+    "optionApprovalLevel": 3,
+    "currentBalances": {
+      "liquidationValue": 10000.0,
+      "cashBalance": 9000.0,
+      "buyingPower": 9000.0
+    }
+  }
+}

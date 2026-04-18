@@ -19,6 +19,7 @@ def register_jobs(scheduler: AsyncIOScheduler, deps: dict[str, object]) -> None:
     token_watchdog_job = deps["token_watchdog"]
     iv_watcher = deps["iv_watcher"]
     signal_runner = deps.get("signal_runner")
+    polygon_backfill = deps.get("polygon_backfill")
 
     async def _run_token_watchdog() -> None:
         await token_watchdog_job()
@@ -96,9 +97,9 @@ def register_jobs(scheduler: AsyncIOScheduler, deps: dict[str, object]) -> None:
         max_instances=1,
         coalesce=True,
     )
-    if settings.polygon_api_key is not None:
+    if settings.polygon_api_key is not None and polygon_backfill is not None:
         scheduler.add_job(
-            lambda: None,
+            polygon_backfill,
             trigger=CronTrigger(hour=22, minute=0, timezone=MARKET_TZ),
             id="polygon_nightly_backfill",
             max_instances=1,

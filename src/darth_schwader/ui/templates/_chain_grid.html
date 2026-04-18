@@ -1,0 +1,33 @@
+{#
+  Delta-filtered chain for one underlying. Populated on-demand via hx-get /api/v1/chains/{underlying}.
+#}
+<table class="table table-chain">
+  <thead>
+    <tr>
+      <th scope="col">Exp</th>
+      <th scope="col" class="num">Strike</th>
+      <th scope="col">Type</th>
+      <th scope="col" class="num">Δ</th>
+      <th scope="col" class="num">IV</th>
+      <th scope="col" class="num">Bid</th>
+      <th scope="col" class="num">Ask</th>
+      <th scope="col" class="num">Mark</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for c in chain|default([]) %}
+    <tr>
+      <td>{{ c.expiration_date }}</td>
+      <td class="num">{{ c.strike }}</td>
+      <td>{{ c.option_type }}</td>
+      <td class="num">{{ c.delta|default('—') }}</td>
+      <td class="num">{{ c.iv|default(c.implied_volatility|default('—')) }}</td>
+      <td class="num">{{ c.bid|default('—') }}</td>
+      <td class="num">{{ c.ask|default('—') }}</td>
+      <td class="num">{{ c.mark|default('—') }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="8" class="muted">No chain loaded.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>

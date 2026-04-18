@@ -1,0 +1,20 @@
+{#
+  Polls: hx-get /api/v1/risk-events every 30s.
+#}
+<ul class="risk-log">
+  {% for r in risk_events|default([]) %}
+  <li class="risk-row risk-row--{{ r.decision|lower }}">
+    <span class="chip chip-decision chip-decision-{{ r.decision|lower }}">{{ r.decision }}</span>
+    <span class="risk-code">{{ r.reason_code }}</span>
+    <span class="risk-text">{{ r.reason_text|default('') }}</span>
+    {% if r.warnings %}
+    <details class="risk-warnings">
+      <summary>{{ r.warnings|length }} warning(s)</summary>
+      <ul>{% for w in r.warnings %}<li>{{ w.reason_text|default(w) }}</li>{% endfor %}</ul>
+    </details>
+    {% endif %}
+  </li>
+  {% else %}
+  <li class="muted">No recent risk events.</li>
+  {% endfor %}
+</ul>

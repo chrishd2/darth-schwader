@@ -16,6 +16,8 @@ from darth_schwader.db.repositories.chains import ChainRepository
 from darth_schwader.db.repositories.iv_events import IvEventsRepository
 from darth_schwader.db.repositories.tokens import TokenRepository
 from darth_schwader.db.session import build_engine, build_session_factory, dispose_engine
+from darth_schwader.data_sources.polygon.client import PolygonClient
+from darth_schwader.data_sources.polygon.ingestion import PolygonIngestion
 from darth_schwader.logging import configure_logging
 from darth_schwader.market.iv_watcher import IvWatcher
 from darth_schwader.risk.engine import RiskEngine
@@ -44,6 +46,13 @@ async def app_lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     oauth_client = SchwabOAuthClient(settings, token_repo)
     broker = SchwabApiClient(settings, token_repo)
+    polygon_client = PolygonClient(settings)
+    polygon_ingestion = PolygonIngestion(
+        session_factory,
+        polygon_client,
+        settings.watchlist,
+        settings.polygon_backfill_days,
+    )
 
     risk_engine = RiskEngine()
     cash_guard = CashAccountGuard(cash_ledger_repo)
@@ -77,6 +86,8 @@ async def app_lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.chain_service = chain_service
     app.state.account_sync = account_sync
     app.state.order_service = order_service
+    app.state.polygon_client = polygon_client
+    app.state.polygon_ingestion = polygon_ingestion
     app.state.iv_watcher = iv_watcher
 
     register_jobs(
@@ -89,6 +100,7 @@ async def app_lifespan(app: FastAPI) -> AsyncIterator[None]:
             "token_watchdog": lambda: token_watchdog(token_repo, oauth_client),
             "iv_watcher": iv_watcher,
             "signal_runner": None,
+            "polygon_backfill": polygon_ingestion.backfill_watchlist,
         },
     )
 
@@ -97,6 +109,7 @@ async def app_lifespan(app: FastAPI) -> AsyncIterator[None]:
         yield
     finally:
         scheduler.shutdown(wait=False)
+        await polygon_client.close()
         await broker.close()
         await oauth_client.close()
         await dispose_engine(engine)

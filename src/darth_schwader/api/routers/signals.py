@@ -3,10 +3,12 @@ from __future__ import annotations
 from decimal import Decimal
 
 from fastapi import APIRouter, Body, Depends, Request
+from fastapi.responses import HTMLResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from darth_schwader.api.deps import get_broker, get_order_service, get_session
+from darth_schwader.api.templating import is_htmx, render_partial
 from darth_schwader.config import Settings, get_settings
 from darth_schwader.db.models import AuditLog, ChainSnapshot, Signal
 from darth_schwader.domain.enums import SignalStatus
@@ -17,14 +19,15 @@ router = APIRouter(tags=["signals"])
 
 @router.get("/signals")
 async def signals(
+    request: Request,
     status: str | None = None,
     session: AsyncSession = Depends(get_session),
-) -> list[dict[str, object]]:
+) -> list[dict[str, object]] | HTMLResponse:
     stmt = select(Signal).order_by(Signal.created_at.desc())
     if status:
         stmt = stmt.where(Signal.status == status)
     rows = await session.scalars(stmt)
-    return [
+    payload = [
         {
             "id": row.id,
             "signal_id": row.signal_id,
@@ -34,9 +37,18 @@ async def signals(
             "suggested_quantity": row.suggested_quantity,
             "preferred_quantity": row.preferred_quantity,
             "ceiling_quantity": row.ceiling_quantity,
+            "suggested_max_loss": str(row.suggested_max_loss) if row.suggested_max_loss is not None else None,
+            "thesis": row.thesis,
         }
         for row in rows
     ]
+    if is_htmx(request):
+        return render_partial(
+            request,
+            "_signals_queue.html",
+            {"signals": payload, "settings": request.app.state.settings},
+        )
+    return payload
 
 
 @router.post("/signals/{signal_id}/submit")

@@ -1,0 +1,9 @@
+{#
+  Polls: hx-get /api/v1/cash-ledger every 60s.
+#}
+<dl class="cash-ledger">
+  <div><dt>Settled</dt><dd class="num pos">{{ settled|default('—') }}</dd></div>
+  <div><dt>Unsettled</dt><dd class="num">{{ unsettled|default('—') }}</dd></div>
+  <div><dt>Locked as collateral</dt><dd class="num neg">{{ locked|default('—') }}</dd></div>
+  <div class="available"><dt>Available</dt><dd class="num pos">{{ available|default('—') }}</dd></div>
+</dl>
