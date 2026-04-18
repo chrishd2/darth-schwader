@@ -3,11 +3,24 @@ from __future__ import annotations
 from pathlib import Path
 
 import uvicorn
-from fastapi import APIRouter, FastAPI, Request
+from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from darth_schwader.api.error_handlers import register_exception_handlers
+from darth_schwader.api.routers import (
+    admin_router,
+    broker_router,
+    chains_router,
+    health_router,
+    orders_router,
+    positions_router,
+    risk_router,
+    settings_router,
+    signals_router,
+    status_router,
+)
 from darth_schwader.config import get_settings
 from darth_schwader.lifespan import app_lifespan
 
@@ -23,12 +36,8 @@ def create_app() -> FastAPI:
         version="0.1.0",
         lifespan=app_lifespan,
     )
+    register_exception_handlers(app)
     templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
-    api = APIRouter(prefix="/api/v1")
-
-    @api.get("/health")
-    async def health() -> dict[str, str]:
-        return {"status": "ok", "env": settings.env}
 
     @app.get("/", response_class=HTMLResponse)
     async def index(request: Request) -> HTMLResponse:
@@ -41,7 +50,19 @@ def create_app() -> FastAPI:
             )
         return HTMLResponse("<html><body><h1>Darth Schwader</h1><p>Phase 1 scaffold.</p></body></html>")
 
-    app.include_router(api)
+    for router in (
+        health_router,
+        status_router,
+        broker_router,
+        chains_router,
+        positions_router,
+        orders_router,
+        signals_router,
+        risk_router,
+        settings_router,
+        admin_router,
+    ):
+        app.include_router(router, prefix="/api/v1")
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR), check_dir=False), name="static")
     return app
 
