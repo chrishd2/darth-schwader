@@ -11,6 +11,7 @@ from darth_schwader.api.routers.risk import router as risk_router
 from darth_schwader.api.routers.settings import router as settings_router
 from darth_schwader.api.routers.signals import router as signals_router
 from darth_schwader.api.routers.status import router as status_router
+from darth_schwader.api.routers.watchlist import router as watchlist_router
 
 __all__ = [
     "admin_router",
@@ -24,4 +25,5 @@ __all__ = [
     "settings_router",
     "signals_router",
     "status_router",
+    "watchlist_router",
 ]

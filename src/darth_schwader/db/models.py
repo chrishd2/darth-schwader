@@ -23,6 +23,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from darth_schwader.db.base import Base
+from darth_schwader.domain.asset_types import AssetType
 from darth_schwader.domain.enums import (
     AccountType,
     CashLedgerReason,
@@ -420,4 +421,37 @@ class IvSpikeEvent(Base):
     signal_run_id: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.current_timestamp()
+    )
+
+
+asset_type_enum = Enum(
+    AssetType,
+    name="assettype",
+    native_enum=False,
+    values_callable=lambda enum_cls: [member.value for member in enum_cls],
+    create_constraint=True,
+)
+
+
+class WatchlistEntry(Base):
+    __tablename__ = "watchlists"
+    __table_args__ = (
+        UniqueConstraint("symbol", "asset_type", name="uq_watchlists_symbol_asset_type"),
+        Index("idx_watchlists_active", "active"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    symbol: Mapped[str] = mapped_column(String(16), nullable=False)
+    asset_type: Mapped[AssetType] = mapped_column(asset_type_enum, nullable=False)
+    strategies: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    notes: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.current_timestamp()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.current_timestamp(),
+        onupdate=func.current_timestamp(),
     )

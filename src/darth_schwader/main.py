@@ -22,6 +22,7 @@ from darth_schwader.api.routers import (
     settings_router,
     signals_router,
     status_router,
+    watchlist_router,
 )
 from darth_schwader.config import get_settings
 from darth_schwader.lifespan import app_lifespan
@@ -77,6 +78,7 @@ def create_app() -> FastAPI:
         risk_router,
         settings_router,
         admin_router,
+        watchlist_router,
     ):
         app.include_router(router, prefix="/api/v1")
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR), check_dir=False), name="static")
