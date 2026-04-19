@@ -105,6 +105,10 @@ button { font: inherit; cursor: pointer; }
 .chip-defined { color: var(--accent-green); }
 .chip-warn { color: var(--accent-amber); }
 .chip-naked { color: var(--accent-red); }
+.chip-asset { font-family: var(--mono); font-weight: 600; min-width: 22px; justify-content: center; }
+.chip-asset-o { color: var(--accent-blue); border-color: color-mix(in oklch, var(--accent-blue) 40%, transparent); }
+.chip-asset-e { color: var(--accent-green); border-color: color-mix(in oklch, var(--accent-green) 40%, transparent); }
+.chip-asset-f { color: var(--accent-amber); border-color: color-mix(in oklch, var(--accent-amber) 40%, transparent); }
 .chip-status-pending { color: var(--fg-dim); }
 .chip-status-approved-awaiting-hitl { color: var(--accent-amber); }
 .chip-status-executed { color: var(--accent-green); }

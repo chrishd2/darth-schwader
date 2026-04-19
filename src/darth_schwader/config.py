@@ -53,6 +53,11 @@ class Settings(BaseSettings):
     min_dte_days: int = 14
     max_dte_days: int = 60
 
+    futures_margin_buffer_pct: Decimal = Decimal("0.30")
+    max_concurrent_futures_contracts_paper: int = 2
+    max_concurrent_futures_contracts_live: int = 1
+    futures_session_cutoff_minutes: int = 15
+
     ai_provider: Literal["openrouter", "none"] = "openrouter"
     openrouter_api_key: SecretStr | None = None
     openrouter_model: str = "anthropic/claude-sonnet-4.6"
@@ -80,6 +85,7 @@ class Settings(BaseSettings):
         "max_weekly_drawdown_pct",
         "max_underlying_allocation_pct",
         "paper_initial_cash",
+        "futures_margin_buffer_pct",
         mode="before",
     )
     @classmethod
@@ -102,11 +108,24 @@ class Settings(BaseSettings):
             raise ValueError("value must be greater than zero")
         return value
 
-    @field_validator("paper_slippage_bps", "paper_session_penalty_bps")
+    @field_validator(
+        "paper_slippage_bps",
+        "paper_session_penalty_bps",
+        "max_concurrent_futures_contracts_paper",
+        "max_concurrent_futures_contracts_live",
+        "futures_session_cutoff_minutes",
+    )
     @classmethod
     def _validate_nonnegative_ints(cls, value: int) -> int:
         if value < 0:
             raise ValueError("value must be greater than or equal to zero")
+        return value
+
+    @field_validator("futures_margin_buffer_pct")
+    @classmethod
+    def _validate_futures_margin_buffer_pct(cls, value: Decimal) -> Decimal:
+        if value < Decimal("0") or value >= Decimal("1"):
+            raise ValueError("futures_margin_buffer_pct must be in [0, 1)")
         return value
 
     @field_validator("paper_initial_cash")

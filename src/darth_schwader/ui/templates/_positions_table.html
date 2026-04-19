@@ -5,6 +5,7 @@
 <table class="table table-positions">
   <thead>
     <tr>
+      <th scope="col">Asset</th>
       <th scope="col">Underlying</th>
       <th scope="col">Strategy</th>
       <th scope="col" class="num">Qty</th>
@@ -17,6 +18,10 @@
   <tbody>
     {% for p in positions|default([]) %}
     <tr>
+      <td>
+        {% set badge = p.asset_badge|default('O') %}
+        <span class="chip chip-asset chip-asset-{{ badge|lower }}" title="{{ {'O':'Option','E':'Equity','F':'Future'}[badge] }}">{{ badge }}</span>
+      </td>
       <td>{{ p.underlying }}</td>
       <td>{{ p.strategy_type }}</td>
       <td class="num">{{ p.quantity }}</td>
@@ -35,7 +40,7 @@
       </td>
     </tr>
     {% else %}
-    <tr><td colspan="7" class="muted">No open positions.</td></tr>
+    <tr><td colspan="8" class="muted">No open positions.</td></tr>
     {% endfor %}
   </tbody>
 </table>
