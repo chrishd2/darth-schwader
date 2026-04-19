@@ -58,6 +58,9 @@ class Settings(BaseSettings):
     max_concurrent_futures_contracts_live: int = 1
     futures_session_cutoff_minutes: int = 15
 
+    auto_execute_confidence_threshold: Decimal = Decimal("0.85")
+    auto_execute_consent_live: bool = False
+
     ai_provider: Literal["openrouter", "none"] = "openrouter"
     openrouter_api_key: SecretStr | None = None
     openrouter_model: str = "anthropic/claude-sonnet-4.6"
@@ -86,6 +89,7 @@ class Settings(BaseSettings):
         "max_underlying_allocation_pct",
         "paper_initial_cash",
         "futures_margin_buffer_pct",
+        "auto_execute_confidence_threshold",
         mode="before",
     )
     @classmethod
@@ -126,6 +130,13 @@ class Settings(BaseSettings):
     def _validate_futures_margin_buffer_pct(cls, value: Decimal) -> Decimal:
         if value < Decimal("0") or value >= Decimal("1"):
             raise ValueError("futures_margin_buffer_pct must be in [0, 1)")
+        return value
+
+    @field_validator("auto_execute_confidence_threshold")
+    @classmethod
+    def _validate_auto_execute_threshold(cls, value: Decimal) -> Decimal:
+        if value < Decimal("0.70") or value > Decimal("0.99"):
+            raise ValueError("auto_execute_confidence_threshold must be in [0.70, 0.99]")
         return value
 
     @field_validator("paper_initial_cash")

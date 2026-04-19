@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from darth_schwader.broker.base import BrokerClient
+from typing import Final
+
+from darth_schwader.broker.base import BrokerCapabilities, BrokerClient
 from darth_schwader.broker.paper import PaperBrokerClient, PriceSource, StaticPriceSource
 from darth_schwader.broker.schwab.client import SchwabApiClient
 from darth_schwader.config import Settings
@@ -8,6 +10,13 @@ from darth_schwader.db.repositories.tokens import TokenRepository
 from darth_schwader.logging import get_logger
 
 _logger = get_logger(__name__)
+
+LIVE_BROKER_CAPABILITIES: Final[BrokerCapabilities] = BrokerCapabilities(
+    supports_options=True,
+    supports_equities=True,
+    supports_futures=False,
+    is_paper=False,
+)
 
 
 class BrokerFactory:
@@ -37,4 +46,4 @@ class BrokerFactory:
         return SchwabApiClient(settings, token_repo)
 
 
-__all__ = ["BrokerFactory"]
+__all__ = ["LIVE_BROKER_CAPABILITIES", "BrokerFactory"]

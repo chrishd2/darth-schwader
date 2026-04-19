@@ -1,6 +1,8 @@
 {#
   PUT /api/v1/settings. Risk caps editable. `allow_naked=true` requires typing CONFIRM.
   Paper↔Live mode toggle requires typing SWITCH_MODE and sends X-Confirm: SWITCH_MODE.
+  Additionally, paper→live flips require typing EXECUTE LIVE, two readiness checkboxes,
+  and a server-side readiness preflight (HTTP 412 on failure).
   Restart required for mode change to take effect; restart_required flag is surfaced in response.
 #}
 <form
@@ -39,6 +41,33 @@
       <span>Type <code>SWITCH_MODE</code> to arm the switch</span>
       <input type="text" id="mode-confirm-input" autocomplete="off" spellcheck="false" />
     </label>
+
+    <fieldset class="live-gate" id="live-gate" hidden>
+      <legend>Live-flip readiness</legend>
+      <p class="live-gate-note">
+        You are about to move real money. The server will run a readiness preflight
+        (Schwab token, risk caps, watchlist capabilities, recent paper activity) and
+        reject the flip with HTTP 412 if any check fails.
+      </p>
+      <label class="field confirm-field">
+        <span>Type <code>EXECUTE LIVE</code> exactly (case-sensitive) to arm</span>
+        <input
+          type="text"
+          id="live-confirm-input"
+          autocomplete="off"
+          spellcheck="false"
+          autocapitalize="off"
+        />
+      </label>
+      <label class="toggle">
+        <input type="checkbox" id="live-ack-credentials" />
+        <span>I confirm Schwab credentials are configured</span>
+      </label>
+      <label class="toggle">
+        <input type="checkbox" id="live-ack-risk" />
+        <span>I have reviewed risk caps</span>
+      </label>
+    </fieldset>
   </fieldset>
 
   <div class="form-grid">
@@ -88,6 +117,44 @@
     </label>
   </div>
 
+  <fieldset class="auto-exec-gate">
+    <legend>Auto-execute</legend>
+    <label class="field auto-exec-slider">
+      <span>
+        Confidence threshold
+        <output id="auto-exec-threshold-output" for="auto-exec-threshold">
+          {{ settings.auto_execute_confidence_threshold }}
+        </output>
+      </span>
+      <input
+        type="range"
+        id="auto-exec-threshold"
+        name="auto_execute_confidence_threshold"
+        min="0.70"
+        max="0.99"
+        step="0.01"
+        value="{{ settings.auto_execute_confidence_threshold }}"
+      />
+      <span class="auto-exec-scale">
+        <span>0.70</span><span>0.85</span><span>0.99</span>
+      </span>
+    </label>
+    <label class="toggle">
+      <input
+        type="checkbox"
+        name="auto_execute_consent_live"
+        id="auto-exec-consent-live"
+        value="true"
+        {% if settings.auto_execute_consent_live %}checked{% endif %}
+      />
+      <span>Consent to auto-execute in LIVE mode</span>
+    </label>
+    <p class="auto-exec-note">
+      When confidence ≥ threshold AND consent is on, approved signals execute
+      without HITL. Consent is honored only in LIVE; PAPER always auto-executes.
+    </p>
+  </fieldset>
+
   <fieldset class="naked-gate">
     <legend>Naked options</legend>
     <label class="toggle">
@@ -117,15 +184,30 @@
   const modeConfirmField = document.getElementById('mode-confirm-field');
   const modeConfirmInput = document.getElementById('mode-confirm-input');
 
+  const liveGate = document.getElementById('live-gate');
+  const liveConfirmInput = document.getElementById('live-confirm-input');
+  const liveAckCreds = document.getElementById('live-ack-credentials');
+  const liveAckRisk = document.getElementById('live-ack-risk');
+
+  const thresholdInput = document.getElementById('auto-exec-threshold');
+  const thresholdOutput = document.getElementById('auto-exec-threshold-output');
+
   const submit = document.getElementById('settings-submit');
 
   const initialPaper = {{ 'true' if settings.paper_trading else 'false' }};
+  const LIVE_CONFIRM_VALUE = 'EXECUTE LIVE';
 
   function currentPaper() {
     for (const radio of modeRadios) {
       if (radio.checked) return radio.value === 'true';
     }
     return initialPaper;
+  }
+
+  function syncThreshold() {
+    if (!thresholdInput || !thresholdOutput) return;
+    const v = parseFloat(thresholdInput.value);
+    thresholdOutput.textContent = Number.isFinite(v) ? v.toFixed(2) : thresholdInput.value;
   }
 
   function sync() {
@@ -137,7 +219,15 @@
     modeConfirmField.hidden = !modeChanging;
     const modeOk = !modeChanging || (modeConfirmInput.value.trim() === 'SWITCH_MODE');
 
-    submit.disabled = !(nakedOk && modeOk);
+    const goingLive = modeChanging && currentPaper() === false;
+    liveGate.hidden = !goingLive;
+    const liveOk = !goingLive || (
+      liveConfirmInput.value === LIVE_CONFIRM_VALUE
+      && liveAckCreds.checked
+      && liveAckRisk.checked
+    );
+
+    submit.disabled = !(nakedOk && modeOk && liveOk);
 
     const headers = {};
     if (wantsNaked && nakedOk) headers['X-Confirm'] = 'CONFIRM';
@@ -145,10 +235,30 @@
     form.setAttribute('hx-headers', JSON.stringify(headers));
   }
 
+  function attachLiveConfirmBody(event) {
+    const goingLive = currentPaper() === false && currentPaper() !== initialPaper;
+    if (!goingLive) return;
+    try {
+      const params = event.detail && event.detail.parameters;
+      if (params && typeof params === 'object') {
+        params.live_confirm = LIVE_CONFIRM_VALUE;
+      }
+    } catch (err) {
+      // If htmx internals change shape, leave it to the server to reject.
+    }
+  }
+
   nakedToggle.addEventListener('change', sync);
   nakedConfirmInput.addEventListener('input', sync);
   modeRadios.forEach((radio) => radio.addEventListener('change', sync));
   modeConfirmInput.addEventListener('input', sync);
+  liveConfirmInput.addEventListener('input', sync);
+  liveAckCreds.addEventListener('change', sync);
+  liveAckRisk.addEventListener('change', sync);
+  if (thresholdInput) thresholdInput.addEventListener('input', syncThreshold);
+  form.addEventListener('htmx:configRequest', attachLiveConfirmBody);
+
+  syncThreshold();
   sync();
 })();
 </script>
