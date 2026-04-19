@@ -10,6 +10,9 @@ from darth_schwader.config import Settings
 from darth_schwader.market.universe import WATCHLIST
 from darth_schwader.quant.iv_metrics import iv_percentile
 
+_ZERO = Decimal("0")
+_HUNDRED = Decimal("100")
+
 
 class ChainRepository(Protocol):
     async def recent_implied_vols(self, underlying: str) -> Sequence[Decimal]:
@@ -45,8 +48,15 @@ class IvWatcher:
             ivs = tuple(await self.chain_repo.recent_implied_vols(underlying))
             if not ivs:
                 continue
-            percentile = iv_percentile(ivs[-1], ivs)
+            current = ivs[-1]
+            percentile = iv_percentile(current, ivs)
             if percentile < threshold:
+                continue
+            floor = min(ivs)
+            if floor <= _ZERO:
+                continue
+            pct_rise_from_floor = (current - floor) / floor * _HUNDRED
+            if pct_rise_from_floor < threshold:
                 continue
             if await self.iv_events_repo.exists_recent(underlying, threshold):
                 continue
