@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
 from openai import AsyncOpenAI
 
@@ -40,10 +42,30 @@ class OpenRouterStrategySelector:
         )
         self._model = model
 
-    async def select(self, features: Features, context: AiRunContext) -> list[StrategySignal]:
+    async def select(
+        self,
+        features: Features,
+        context: AiRunContext,
+        *,
+        setups: Sequence[dict[str, Any]] | None = None,
+    ) -> list[StrategySignal]:
         if not PROMPT_PATH.exists():
             raise FileNotFoundError(f"missing prompt file: {PROMPT_PATH}")
         prompt = PROMPT_PATH.read_text(encoding="utf-8")
+        user_payload: dict[str, Any] = {
+            "features": {
+                "underlying": features.underlying,
+                "iv_rank": str(features.iv_rank),
+                "iv_percentile": str(features.iv_percentile),
+                "term_slope": str(features.term_slope),
+                "skew": str(features.skew),
+                "rv_iv_spread": str(features.rv_iv_spread),
+                "regime": int(features.regime),
+            },
+            "context": context.model_dump(mode="json"),
+        }
+        if setups:
+            user_payload["setups"] = list(setups)
         response = await self._client.chat.completions.create(
             model=self._model,
             max_tokens=MAX_TOKENS,
@@ -51,20 +73,7 @@ class OpenRouterStrategySelector:
                 {"role": "system", "content": prompt},
                 {
                     "role": "user",
-                    "content": json.dumps(
-                        {
-                            "features": {
-                                "underlying": features.underlying,
-                                "iv_rank": str(features.iv_rank),
-                                "iv_percentile": str(features.iv_percentile),
-                                "term_slope": str(features.term_slope),
-                                "skew": str(features.skew),
-                                "rv_iv_spread": str(features.rv_iv_spread),
-                                "regime": int(features.regime),
-                            },
-                            "context": context.model_dump(mode="json"),
-                        }
-                    ),
+                    "content": json.dumps(user_payload),
                 },
             ],
         )

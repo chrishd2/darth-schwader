@@ -22,8 +22,10 @@ from darth_schwader.db.repositories.cash_ledger import CashLedgerRepository
 from darth_schwader.db.repositories.chains import ChainRepository
 from darth_schwader.db.repositories.iv_events import IvEventsRepository
 from darth_schwader.db.repositories.tokens import TokenRepository
+from darth_schwader.db.repositories.watchlist import WatchlistRepository
 from darth_schwader.db.session import build_engine, build_session_factory, dispose_engine
 from darth_schwader.logging import configure_logging
+from darth_schwader.market.bar_provider import PolygonBarProvider
 from darth_schwader.market.iv_watcher import IvWatcher
 from darth_schwader.quant.features import Features
 from darth_schwader.quant.features import compute as compute_features
@@ -32,6 +34,7 @@ from darth_schwader.services.account_sync import AccountSyncService
 from darth_schwader.services.chain_service import ChainService
 from darth_schwader.services.order_service import OrderService
 from darth_schwader.services.scheduler import register_jobs
+from darth_schwader.services.setup_heatmap import SetupHeatmapService
 from darth_schwader.services.signal_runner import SignalRunner, empty_feature_provider
 from darth_schwader.services.token_watchdog import token_watchdog
 
@@ -166,6 +169,10 @@ async def app_lifespan(app: FastAPI) -> AsyncIterator[None]:  # noqa: PLR0915
     app.state.polygon_client = polygon_client
     app.state.polygon_ingestion = polygon_ingestion
     app.state.iv_watcher = iv_watcher
+    app.state.setup_heatmap_service = SetupHeatmapService(
+        watchlist_repo=WatchlistRepository(session_factory),
+        bar_provider=PolygonBarProvider(polygon_client),
+    )
     _attach_ai_services(app, settings, session_factory)
 
     signal_runner = SignalRunner(

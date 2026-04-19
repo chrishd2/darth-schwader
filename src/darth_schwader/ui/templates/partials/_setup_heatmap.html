@@ -1,0 +1,45 @@
+{#
+  Polls: hx-get /api/v1/setup-heatmap every 60s.
+  Each row surfaces per-symbol indicators and the strongest setup score.
+  Bucketing (bg colour on .score cell) comes from the score value, rendered server-side.
+#}
+<table class="heatmap">
+  <caption class="sr-only">Setup heatmap by symbol</caption>
+  <thead>
+    <tr>
+      <th scope="col">Symbol</th>
+      <th scope="col">Asset</th>
+      <th scope="col" class="num">RSI14</th>
+      <th scope="col" class="num">EMA8/21</th>
+      <th scope="col" class="num">ADX</th>
+      <th scope="col" class="num">BB %ile</th>
+      <th scope="col" class="num">VWAP Δ</th>
+      <th scope="col">Best setup</th>
+      <th scope="col" class="num">Score</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in rows|default([]) %}
+    {% set ind = r.indicators %}
+    {% set score = r.best_score|default('0')|float %}
+    {% set bucket = 'none' if score < 40 else ('low' if score < 60 else ('mid' if score < 80 else 'high')) %}
+    <tr class="heatmap-row{% if r.error %} heatmap-row--error{% endif %}">
+      <th scope="row" class="heatmap-sym">{{ r.symbol }}</th>
+      <td><span class="chip chip-asset chip-asset-{{ r.asset_type|lower }}">{{ r.asset_type }}</span></td>
+      {% if ind %}
+      <td class="num">{{ ind.rsi14 }}</td>
+      <td class="num">{{ ind.ema8 }}/{{ ind.ema21 }}</td>
+      <td class="num">{{ ind.adx14 }}</td>
+      <td class="num">{{ ind.bb_width_pct }}</td>
+      <td class="num">{{ ind.vwap_distance }}</td>
+      <td>{{ r.best_setup|default('—') }}</td>
+      <td class="num heatmap-score heatmap-score--{{ bucket }}">{{ r.best_score }}</td>
+      {% else %}
+      <td colspan="7" class="heatmap-note muted">{{ r.error|default('no data') }}</td>
+      {% endif %}
+    </tr>
+    {% else %}
+    <tr><td colspan="9" class="muted">No watchlist entries.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>

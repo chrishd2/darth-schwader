@@ -20,6 +20,7 @@ from darth_schwader.api.routers import (
     positions_router,
     risk_router,
     settings_router,
+    setup_heatmap_router,
     signals_router,
     status_router,
     watchlist_router,
@@ -79,6 +80,7 @@ def create_app() -> FastAPI:
         settings_router,
         admin_router,
         watchlist_router,
+        setup_heatmap_router,
     ):
         app.include_router(router, prefix="/api/v1")
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR), check_dir=False), name="static")

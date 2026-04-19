@@ -1,0 +1,50 @@
+{#
+  Watchlist editor — lightweight inline panel (no modal dialog).
+  Polls: hx-get /api/v1/watchlist on load + after each mutation.
+  Create/edit/delete flow via JSON APIs with json-enc extension.
+#}
+<section class="panel panel-watchlist" aria-labelledby="watchlist-heading">
+  <div class="panel-head">
+    <h2 id="watchlist-heading">Watchlist</h2>
+    <span class="panel-sub">Symbols feeding the heatmap + signal runner</span>
+  </div>
+  <div class="panel-body">
+    <form
+      class="watchlist-form"
+      hx-post="/api/v1/watchlist"
+      hx-ext="json-enc"
+      hx-target="#watchlist-body"
+      hx-swap="none"
+      hx-on::after-request="if(event.detail.successful){this.reset();htmx.trigger('#watchlist-body','refresh');htmx.trigger('#heatmap-body','refresh')}"
+    >
+      <label class="field field-sym">
+        <span>Symbol</span>
+        <input name="symbol" type="text" maxlength="16" required pattern="[A-Za-z0-9\.:/_-]+" />
+      </label>
+      <label class="field">
+        <span>Asset</span>
+        <select name="asset_type" required>
+          <option value="EQUITY">Equity</option>
+          <option value="ETF">ETF</option>
+          <option value="FUTURE">Future</option>
+          <option value="OPTION_UNDERLYING">Option U/L</option>
+        </select>
+      </label>
+      <label class="field field-strats">
+        <span>Strategies</span>
+        <input name="strategies" type="text" placeholder="BULL_PULLBACK,IV_CONTRACTION"
+               hx-vals='js:{strategies: this.value ? this.value.split(",").map(s=>s.trim()).filter(Boolean) : []}' />
+      </label>
+      <button type="submit" class="btn btn-primary">Add</button>
+    </form>
+
+    <div id="watchlist-body"
+         hx-get="/api/v1/watchlist"
+         hx-trigger="load, every 60s, refresh"
+         hx-swap="innerHTML"
+         hx-ext="client-side-templates">
+      {# populated via api/v1/watchlist; initial render shows skeleton #}
+      <p class="muted">Loading watchlist…</p>
+    </div>
+  </div>
+</section>

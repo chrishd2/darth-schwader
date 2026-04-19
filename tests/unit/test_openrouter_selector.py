@@ -203,3 +203,50 @@ async def test_select_tolerates_leading_prose(
     result = await _selector().select(features, context)
 
     assert [signal.signal_id for signal in result] == ["sig-aapl-vertical-001"]
+
+
+async def test_select_includes_setups_in_user_payload(
+    respx_mock: respx.MockRouter,
+    valid_signal_payload: dict[str, object],
+    features: Features,
+    context: AiRunContext,
+) -> None:
+    content = json.dumps({"signals": [valid_signal_payload]})
+    route = respx_mock.post(OPENROUTER_CHAT_URL).mock(
+        return_value=httpx.Response(200, json=_completion_response(content))
+    )
+    setups = [
+        {
+            "symbol": "AAPL",
+            "best_setup": "BULL_PULLBACK",
+            "best_score": "72",
+            "scores": {"BULL_PULLBACK": "72", "BEAR_BREAKDOWN": "10", "IV_CONTRACTION": "5"},
+            "indicators": {"rsi14": "34", "adx14": "25"},
+        }
+    ]
+
+    await _selector().select(features, context, setups=setups)
+
+    sent_body = json.loads(route.calls.last.request.content.decode())
+    user_message = sent_body["messages"][1]["content"]
+    user_payload = json.loads(user_message)
+    assert user_payload["setups"][0]["symbol"] == "AAPL"
+    assert user_payload["setups"][0]["best_setup"] == "BULL_PULLBACK"
+
+
+async def test_select_omits_setups_key_when_none_provided(
+    respx_mock: respx.MockRouter,
+    valid_signal_payload: dict[str, object],
+    features: Features,
+    context: AiRunContext,
+) -> None:
+    content = json.dumps({"signals": [valid_signal_payload]})
+    route = respx_mock.post(OPENROUTER_CHAT_URL).mock(
+        return_value=httpx.Response(200, json=_completion_response(content))
+    )
+
+    await _selector().select(features, context)
+
+    sent_body = json.loads(route.calls.last.request.content.decode())
+    user_payload = json.loads(sent_body["messages"][1]["content"])
+    assert "setups" not in user_payload

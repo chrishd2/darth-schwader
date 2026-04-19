@@ -1,0 +1,43 @@
+{#
+  Setup detail card — renders full breakdown for a single HeatmapRow.
+  Used via htmx expand from _setup_heatmap.html rows when a user clicks a symbol.
+#}
+<article class="setup-card" aria-label="Setup detail for {{ row.symbol }}">
+  <header class="setup-card-head">
+    <h3 class="setup-card-sym">{{ row.symbol }}</h3>
+    <span class="chip chip-asset chip-asset-{{ row.asset_type|lower }}">{{ row.asset_type }}</span>
+    {% if row.best_setup %}
+    <span class="chip chip-setup">{{ row.best_setup }} · {{ row.best_score }}</span>
+    {% endif %}
+  </header>
+
+  {% if row.indicators %}
+  <dl class="setup-indicators">
+    <div><dt>Close</dt><dd class="num">{{ row.indicators.close }}</dd></div>
+    <div><dt>RSI14</dt><dd class="num">{{ row.indicators.rsi14 }}</dd></div>
+    <div><dt>EMA8</dt><dd class="num">{{ row.indicators.ema8 }}</dd></div>
+    <div><dt>EMA21</dt><dd class="num">{{ row.indicators.ema21 }}</dd></div>
+    <div><dt>ATR14</dt><dd class="num">{{ row.indicators.atr14 }}</dd></div>
+    <div><dt>ADX14</dt><dd class="num">{{ row.indicators.adx14 }}</dd></div>
+    <div><dt>BB width</dt><dd class="num">{{ row.indicators.bb_width }}</dd></div>
+    <div><dt>BB pct</dt><dd class="num">{{ row.indicators.bb_width_pct }}</dd></div>
+    <div><dt>VWAP</dt><dd class="num">{{ row.indicators.vwap }}</dd></div>
+    <div><dt>VWAP Δ</dt><dd class="num">{{ row.indicators.vwap_distance }}</dd></div>
+  </dl>
+  {% endif %}
+
+  {% if row.scores %}
+  <ul class="setup-scores">
+    {% for name, value in row.scores.items() %}
+    <li class="setup-score-row">
+      <span class="setup-score-name">{{ name }}</span>
+      <span class="num">{{ value }}</span>
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+
+  {% if row.error %}
+  <p class="muted">{{ row.error }}</p>
+  {% endif %}
+</article>

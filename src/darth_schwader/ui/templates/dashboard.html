@@ -60,6 +60,22 @@
     </div>
   </section>
 
+  <section class="panel panel-heatmap" aria-labelledby="heatmap-heading">
+    <div class="panel-head">
+      <h2 id="heatmap-heading">Setup heatmap</h2>
+      <span class="panel-sub">Daily indicators + setup scores</span>
+    </div>
+    <div id="heatmap-body"
+         hx-get="/api/v1/setup-heatmap"
+         hx-trigger="load, every 60s, refresh"
+         hx-swap="innerHTML"
+         class="panel-body panel-body--scroll">
+      <p class="muted">Loading heatmap…</p>
+    </div>
+  </section>
+
+  {% include "partials/_watchlist_editor.html" %}
+
   <section class="panel panel-settings" aria-labelledby="settings-heading">
     <div class="panel-head">
       <h2 id="settings-heading">Settings</h2>

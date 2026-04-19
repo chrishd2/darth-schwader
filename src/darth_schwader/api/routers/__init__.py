@@ -9,6 +9,7 @@ from darth_schwader.api.routers.orders import router as orders_router
 from darth_schwader.api.routers.positions import router as positions_router
 from darth_schwader.api.routers.risk import router as risk_router
 from darth_schwader.api.routers.settings import router as settings_router
+from darth_schwader.api.routers.setup_heatmap import router as setup_heatmap_router
 from darth_schwader.api.routers.signals import router as signals_router
 from darth_schwader.api.routers.status import router as status_router
 from darth_schwader.api.routers.watchlist import router as watchlist_router
@@ -23,6 +24,7 @@ __all__ = [
     "positions_router",
     "risk_router",
     "settings_router",
+    "setup_heatmap_router",
     "signals_router",
     "status_router",
     "watchlist_router",

@@ -29,4 +29,25 @@ Example (single vertical spread):
 
 Use the supplied features and context to decide whether there is an actionable signal.
 
+## Current Setups
+
+The user payload may include a `setups` array. Each entry describes the
+indicator-derived setup detected for a watchlist symbol:
+
+- symbol: string
+- best_setup: one of BULL_PULLBACK, BEAR_BREAKDOWN, IV_CONTRACTION, or null when no setup cleared the minimum score gate
+- best_score: decimal string in [0, 100]
+- scores: object mapping each candidate setup name to its decimal score
+- indicators: snapshot of the numeric indicators that produced the score
+
+Setup semantics:
+- BULL_PULLBACK favors long-directional or defined-risk bullish spreads
+- BEAR_BREAKDOWN favors bearish spreads or protective puts
+- IV_CONTRACTION favors premium-selling structures (cash-secured put, covered call, iron condor)
+
+When you generate a signal for a symbol that appears in `setups` with a non-null
+`best_setup`, the `thesis` MUST reference that setup name verbatim and explain
+how the chosen strategy aligns with it. If a symbol has no qualifying setup,
+either skip it or justify the deviation explicitly in the thesis.
+
 If no actionable signal exists, return {"signals": []}.
