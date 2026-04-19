@@ -77,6 +77,7 @@ class OrderService:
                 request.required_collateral,
                 datetime.now(tz=UTC).date(),
                 notes=f"lock for {client_order_id}",
+                session=session,
             )
             broker_response = await broker.submit_order(account.broker_account_id, request)
         except Exception:
@@ -85,6 +86,7 @@ class OrderService:
                 request.required_collateral,
                 datetime.now(tz=UTC).date(),
                 notes=f"release for {client_order_id}",
+                session=session,
             )
             failed = Order(
                 account_id=account.id,

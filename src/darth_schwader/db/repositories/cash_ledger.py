@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from typing import AsyncIterator
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -16,6 +18,16 @@ class CashLedgerRepository:
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory
 
+    @asynccontextmanager
+    async def _maybe_session(
+        self, session: AsyncSession | None
+    ) -> AsyncIterator[tuple[AsyncSession, bool]]:
+        if session is not None:
+            yield session, False
+            return
+        async with self._session_factory() as owned:
+            yield owned, True
+
     async def append_delta(
         self,
         account_id: int,
@@ -27,6 +39,7 @@ class CashLedgerRepository:
         related_fill_id: int | None = None,
         notes: str | None = None,
         occurred_at: datetime | None = None,
+        session: AsyncSession | None = None,
     ) -> CashLedger:
         entry = CashLedger(
             account_id=account_id,
@@ -38,28 +51,43 @@ class CashLedgerRepository:
             related_fill_id=related_fill_id,
             notes=notes,
         )
-        async with self._session_factory() as session:
-            session.add(entry)
-            await session.commit()
-            await session.refresh(entry)
+        async with self._maybe_session(session) as (scope, owns):
+            scope.add(entry)
+            if owns:
+                await scope.commit()
+                await scope.refresh(entry)
+            else:
+                await scope.flush()
             return entry
 
-    async def settled_cash_as_of(self, account_id: int, as_of_date: date) -> Decimal:
-        async with self._session_factory() as session:
-            stmt = select(func.coalesce(func.sum(CashLedger.delta_amount), 0)).where(
-                CashLedger.account_id == account_id,
-                CashLedger.settles_on <= as_of_date,
-            )
-            value = await session.scalar(stmt)
+    async def settled_cash_as_of(
+        self,
+        account_id: int,
+        as_of_date: date,
+        *,
+        session: AsyncSession | None = None,
+    ) -> Decimal:
+        stmt = select(func.coalesce(func.sum(CashLedger.delta_amount), 0)).where(
+            CashLedger.account_id == account_id,
+            CashLedger.settles_on <= as_of_date,
+        )
+        async with self._maybe_session(session) as (scope, _):
+            value = await scope.scalar(stmt)
             return Decimal(str(value or 0))
 
-    async def unsettled_cash_as_of(self, account_id: int, as_of_date: date) -> Decimal:
-        async with self._session_factory() as session:
-            stmt = select(func.coalesce(func.sum(CashLedger.delta_amount), 0)).where(
-                CashLedger.account_id == account_id,
-                CashLedger.settles_on > as_of_date,
-            )
-            value = await session.scalar(stmt)
+    async def unsettled_cash_as_of(
+        self,
+        account_id: int,
+        as_of_date: date,
+        *,
+        session: AsyncSession | None = None,
+    ) -> Decimal:
+        stmt = select(func.coalesce(func.sum(CashLedger.delta_amount), 0)).where(
+            CashLedger.account_id == account_id,
+            CashLedger.settles_on > as_of_date,
+        )
+        async with self._maybe_session(session) as (scope, _):
+            value = await scope.scalar(stmt)
             return Decimal(str(value or 0))
 
     async def lock_collateral(
@@ -70,6 +98,7 @@ class CashLedgerRepository:
         *,
         related_order_id: int | None = None,
         notes: str | None = None,
+        session: AsyncSession | None = None,
     ) -> CashLedger:
         if amount < _ZERO:
             raise ValueError("collateral amount must be non-negative")
@@ -80,6 +109,7 @@ class CashLedgerRepository:
             settles_on=settles_on,
             related_order_id=related_order_id,
             notes=notes,
+            session=session,
         )
 
     async def release_collateral(
@@ -90,6 +120,7 @@ class CashLedgerRepository:
         *,
         related_order_id: int | None = None,
         notes: str | None = None,
+        session: AsyncSession | None = None,
     ) -> CashLedger:
         if amount < _ZERO:
             raise ValueError("collateral amount must be non-negative")
@@ -100,11 +131,18 @@ class CashLedgerRepository:
             settles_on=settles_on,
             related_order_id=related_order_id,
             notes=notes,
+            session=session,
         )
 
-    async def running_available_cash(self, account_id: int, as_of_date: date) -> Decimal:
-        settled = await self.settled_cash_as_of(account_id, as_of_date)
-        unsettled = await self.unsettled_cash_as_of(account_id, as_of_date)
+    async def running_available_cash(
+        self,
+        account_id: int,
+        as_of_date: date,
+        *,
+        session: AsyncSession | None = None,
+    ) -> Decimal:
+        settled = await self.settled_cash_as_of(account_id, as_of_date, session=session)
+        unsettled = await self.unsettled_cash_as_of(account_id, as_of_date, session=session)
         return settled + min(unsettled, _ZERO)
 
 

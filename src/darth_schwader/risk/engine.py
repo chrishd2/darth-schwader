@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import asdict
 from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -124,8 +125,8 @@ class RiskEngine:
             decision=decision.decision,
             reason_code=decision.reason_code,
             reason_text=decision.reason_text,
-            rule_results_json=[result.__dict__ for result in decision.rule_results],
-            warnings_json=[warning.__dict__ for warning in decision.warnings] or None,
+            rule_results_json=[asdict(result) for result in decision.rule_results],
+            warnings_json=[asdict(warning) for warning in decision.warnings] or None,
             max_loss=decision.max_loss,
             position_size_limit=decision.position_size_limit,
             approved_quantity=decision.approved_quantity,
