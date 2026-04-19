@@ -12,6 +12,16 @@ class StrategyType(StrEnum):
     CALENDAR_SPREAD = "CALENDAR_SPREAD"
     NAKED_PUT = "NAKED_PUT"
     NAKED_CALL = "NAKED_CALL"
+    LONG_EQUITY = "LONG_EQUITY"
+    SHORT_EQUITY = "SHORT_EQUITY"
+    LONG_FUTURE = "LONG_FUTURE"
+    SHORT_FUTURE = "SHORT_FUTURE"
+
+
+class BracketRole(StrEnum):
+    ENTRY = "ENTRY"
+    STOP = "STOP"
+    TARGET = "TARGET"
 
 
 class SignalStatus(StrEnum):
@@ -56,6 +66,7 @@ class CashLedgerReason(StrEnum):
 
 __all__ = [
     "AccountType",
+    "BracketRole",
     "CashLedgerReason",
     "CollateralKind",
     "OrderStatus",

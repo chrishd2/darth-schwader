@@ -253,8 +253,13 @@ class Order(Base):
         CheckConstraint("is_naked IN (0,1)", name="ck_orders_is_naked_boolean"),
         CheckConstraint("max_loss >= 0", name="ck_orders_max_loss_nonnegative"),
         CheckConstraint("required_collateral >= 0", name="ck_orders_required_collateral_nonnegative"),
+        CheckConstraint(
+            "bracket_role IS NULL OR bracket_role IN ('ENTRY','STOP','TARGET')",
+            name="ck_orders_bracket_role",
+        ),
         Index("idx_orders_account_status", "account_id", "order_status"),
         Index("idx_orders_underlying_status", "underlying", "order_status"),
+        Index("idx_orders_parent", "parent_order_id"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -285,6 +290,10 @@ class Order(Base):
     )
     max_loss: Mapped[Decimal] = mapped_column(money, nullable=False)
     order_payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    parent_order_id: Mapped[int | None] = mapped_column(ForeignKey("orders.id"))
+    bracket_role: Mapped[str | None] = mapped_column(String(16))
+    stop_price: Mapped[Decimal | None] = mapped_column(money)
+    target_price: Mapped[Decimal | None] = mapped_column(money)
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
