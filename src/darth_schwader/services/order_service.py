@@ -79,7 +79,9 @@ class OrderService:
                 notes=f"lock for {client_order_id}",
                 session=session,
             )
-            broker_response = await broker.submit_order(account.broker_account_id, request)
+            broker_response = await broker.submit_order(
+                account.broker_account_id, request, session=session
+            )
         except Exception:
             await self._cash_guard.release_for_cancel(
                 account.id,

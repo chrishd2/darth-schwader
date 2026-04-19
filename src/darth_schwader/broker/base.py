@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from darth_schwader.broker.models import (
     Account,
     OptionChain,
@@ -30,7 +32,13 @@ class BrokerClient(Protocol):
     async def get_chain(self, symbol: str) -> OptionChain:
         ...
 
-    async def submit_order(self, account_id: str, request: OrderRequest) -> OrderResponse:
+    async def submit_order(
+        self,
+        account_id: str,
+        request: OrderRequest,
+        *,
+        session: AsyncSession | None = None,
+    ) -> OrderResponse:
         ...
 
     async def get_order_status(self, account_id: str, broker_order_id: str) -> OrderResponse:

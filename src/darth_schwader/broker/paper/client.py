@@ -6,6 +6,8 @@ from dataclasses import dataclass, replace
 from decimal import Decimal
 from typing import Literal, Protocol
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from darth_schwader.broker.base import BrokerCapabilities, BrokerClient
 from darth_schwader.broker.exceptions import BrokerError, OrderRejectedError
 from darth_schwader.broker.models import (
@@ -163,11 +165,18 @@ class PaperBrokerClient(BrokerClient):
             "wire a real MarketDataClient before calling.",
         )
 
-    async def submit_order(self, account_id: str, request: OrderRequest) -> OrderResponse:
+    async def submit_order(
+        self,
+        account_id: str,
+        request: OrderRequest,
+        *,
+        session: AsyncSession | None = None,
+    ) -> OrderResponse:
+        del session
         self._validate_account_id(account_id)
         if not request.legs:
             raise OrderRejectedError("paper order must contain at least one leg")
-        session = self._session_provider()
+        market_session = self._session_provider()
 
         async with self._lock:
             fills = []
@@ -190,7 +199,7 @@ class PaperBrokerClient(BrokerClient):
                     raise OrderRejectedError(
                         f"no paper price available for {leg.instrument_symbol}",
                     )
-                fill = self._fill_simulator.simulate(leg, ref_price, session)
+                fill = self._fill_simulator.simulate(leg, ref_price, market_session)
                 fills.append(fill)
                 asset_types.append(leg.asset_type)
                 cash_delta += self._cash_effect(leg, fill.price)
@@ -226,7 +235,7 @@ class PaperBrokerClient(BrokerClient):
                 status=OrderStatus.FILLED,
                 raw={
                     "simulated_fills": [fill.model_dump(mode="json") for fill in fills],
-                    "session": session.value,
+                    "session": market_session.value,
                     "asset_types": asset_types,
                 },
             )
@@ -236,7 +245,7 @@ class PaperBrokerClient(BrokerClient):
                 broker_order_id=broker_order_id,
                 client_order_id=request.client_order_id,
                 cash_balance=str(self._cash),
-                session=session.value,
+                session=market_session.value,
                 legs=len(request.legs),
             )
             return response

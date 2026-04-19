@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 import httpx
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from darth_schwader.broker.base import BrokerCapabilities, BrokerClient
 from darth_schwader.broker.exceptions import (
@@ -70,11 +71,18 @@ class SchwabApiClient(BrokerClient):
         )
         return map_option_chain(payload)
 
-    async def submit_order(self, account_id: str, request: OrderRequest) -> OrderResponse:
+    async def submit_order(
+        self,
+        account_id: str,
+        request: OrderRequest,
+        *,
+        session: AsyncSession | None = None,
+    ) -> OrderResponse:
         payload = await self._request(
             "POST",
             ORDERS_URL.format(account_id=account_id),
             json=map_order_request(request),
+            session=session,
         )
         return map_order_response(payload, status_hint="SUBMITTED")
 
@@ -105,9 +113,10 @@ class SchwabApiClient(BrokerClient):
         url: str,
         *,
         retry_on_401: bool = True,
+        session: AsyncSession | None = None,
         **kwargs: Any,
     ) -> dict[str, Any] | list[dict[str, Any]]:
-        token = await self._token_repo.get_active("schwab")
+        token = await self._token_repo.get_active("schwab", session=session)
         if token is None:
             raise AuthExpiredError("no active Schwab token record")
 
@@ -125,7 +134,7 @@ class SchwabApiClient(BrokerClient):
                 if not retry_on_401:
                     raise AuthExpiredError("Schwab access token rejected after refresh retry")
                 await self._refresh_tokens(force=True)
-                fresh = await self._token_repo.get_active("schwab")
+                fresh = await self._token_repo.get_active("schwab", session=session)
                 if fresh is None:
                     raise AuthExpiredError("token refresh did not persist a valid token")
                 headers["Authorization"] = f"Bearer {fresh.access_token.get_secret_value()}"

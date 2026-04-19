@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import AsyncIterator
 
 from cryptography.fernet import Fernet, InvalidToken
 from pydantic import SecretStr
@@ -37,6 +39,16 @@ class TokenRepository:
         self._session_factory = session_factory
         self._fernet = Fernet(settings.token_encryption_key.get_secret_value().encode("utf-8"))
 
+    @asynccontextmanager
+    async def _maybe_session(
+        self, session: AsyncSession | None
+    ) -> AsyncIterator[tuple[AsyncSession, bool]]:
+        if session is not None:
+            yield session, False
+            return
+        async with self._session_factory() as owned:
+            yield owned, True
+
     def _encrypt(self, value: SecretStr) -> str:
         return self._fernet.encrypt(value.get_secret_value().encode("utf-8")).decode("utf-8")
 
@@ -57,10 +69,11 @@ class TokenRepository:
         refresh_token_expires_at: datetime,
         token_type: str = "Bearer",
         scope: str | None = None,
+        session: AsyncSession | None = None,
     ) -> TokenRecord:
         now = datetime.now(tz=UTC)
-        async with self._session_factory() as session:
-            existing = await session.scalar(
+        async with self._maybe_session(session) as (scope_session, owns):
+            existing = await scope_session.scalar(
                 select(BrokerToken).where(BrokerToken.provider == provider).limit(1)
             )
             if existing is None:
@@ -77,7 +90,7 @@ class TokenRepository:
                     last_refresh_success_at=now,
                     version=1,
                 )
-                session.add(existing)
+                scope_session.add(existing)
             else:
                 existing.access_token_ciphertext = self._encrypt(access_token)
                 existing.refresh_token_ciphertext = self._encrypt(refresh_token)
@@ -89,13 +102,21 @@ class TokenRepository:
                 existing.last_refresh_attempt_at = now
                 existing.last_refresh_success_at = now
                 existing.version += 1
-            await session.commit()
-            await session.refresh(existing)
+            if owns:
+                await scope_session.commit()
+                await scope_session.refresh(existing)
+            else:
+                await scope_session.flush()
             return self._to_record(existing)
 
-    async def get_active(self, provider: str) -> TokenRecord | None:
-        async with self._session_factory() as session:
-            token = await session.scalar(
+    async def get_active(
+        self,
+        provider: str,
+        *,
+        session: AsyncSession | None = None,
+    ) -> TokenRecord | None:
+        async with self._maybe_session(session) as (scope_session, _):
+            token = await scope_session.scalar(
                 select(BrokerToken).where(BrokerToken.provider == provider).limit(1)
             )
             if token is None:
@@ -108,9 +129,10 @@ class TokenRepository:
         *,
         access_token_expires_at: datetime,
         refresh_token_expires_at: datetime,
+        session: AsyncSession | None = None,
     ) -> None:
-        async with self._session_factory() as session:
-            token = await session.scalar(
+        async with self._maybe_session(session) as (scope_session, owns):
+            token = await scope_session.scalar(
                 select(BrokerToken).where(BrokerToken.provider == provider).limit(1)
             )
             if token is None:
@@ -121,12 +143,25 @@ class TokenRepository:
             token.last_refresh_attempt_at = now
             token.last_refresh_success_at = now
             token.rotated_at = now
-            await session.commit()
+            if owns:
+                await scope_session.commit()
+            else:
+                await scope_session.flush()
 
-    async def delete(self, provider: str) -> None:
-        async with self._session_factory() as session:
-            await session.execute(delete(BrokerToken).where(BrokerToken.provider == provider))
-            await session.commit()
+    async def delete(
+        self,
+        provider: str,
+        *,
+        session: AsyncSession | None = None,
+    ) -> None:
+        async with self._maybe_session(session) as (scope_session, owns):
+            await scope_session.execute(
+                delete(BrokerToken).where(BrokerToken.provider == provider)
+            )
+            if owns:
+                await scope_session.commit()
+            else:
+                await scope_session.flush()
 
     def _to_record(self, row: BrokerToken) -> TokenRecord:
         return TokenRecord(
